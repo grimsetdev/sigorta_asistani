@@ -9,8 +9,16 @@ from PIL import Image
 # --- Sayfa Ayarları ---
 st.set_page_config(page_title="Grimset AI | Sigorta Otomasyonu", page_icon="🛡️", layout="wide")
 
-# Gemini 2.0 Flash modeli görüntü işleme için mükemmeldir
-client = genai.Client()
+# --- API ANAHTARI VE GÜVENLİK AYARLARI ---
+# Streamlit Cloud'daki "Secrets" içinden veya yerel ortam değişkenlerinden anahtarı otomatik çeker
+api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+
+if not api_key:
+    st.error("Lütfen Gemini API anahtarını Streamlit Secrets veya Ortam Değişkeni olarak ekleyin!")
+    st.stop()
+
+# Gemini modelleri başlatılıyor
+client = genai.Client(api_key=api_key)
 VISION_MODEL = 'gemini-2.5-flash'
 TEXT_MODEL = 'gemini-2.5-flash'
 
@@ -20,7 +28,7 @@ BELGELER_KLASORU = "belgeler"
 # --- Arka Plan Fonksiyonları (Vektör & OCR) ---
 
 def metni_vektore_cevir(metin):
-    # En güncel embedding modeli
+    # En güncel embedding modeli (Hata vermemesi için güncellendi)
     response = client.models.embed_content(
         model='gemini-embedding-001',
         contents=metin
@@ -35,7 +43,6 @@ def benzerlik_hesapla(v1, v2):
     return dot_product / (magnitude1 * magnitude2)
 
 def hafizayi_olustur_ve_kaydet():
-    # Eski PDF okuma mantığı (Değişmedi, performansı arttırıldı)
     if not os.path.exists(BELGELER_KLASORU):
         os.makedirs(BELGELER_KLASORU)
         st.error(f"'{BELGELER_KLASORU}' klasörü oluşturuldu. İçine PDF ekleyin.")
@@ -58,7 +65,6 @@ def hafizayi_olustur_ve_kaydet():
     parcalar = [tam_metin[i:i+chunk_size] for i in range(0, len(tam_metin), chunk_size)]
 
     veritabani = []
-    # Yükleme ekranı
     progress_bar = st.progress(0)
     for i, parca in enumerate(parcalar):
         if len(parca.strip()) > 50: 
@@ -82,11 +88,7 @@ def veritabani_yukle():
             return hafizayi_olustur_ve_kaydet()
 
 def ruhsat_oku(gorsel_dosya):
-    """
-    Gemini Vision modelini kullanarak ruhsat görselinden veri ayıklar.
-    """
     gorsel = Image.open(gorsel_dosya)
-    
     prompt = """Sen analitik bir OCR asistanısın. Gönderilen fotoğrafı (Türkiye araç ruhsatı) analiz et. 
 SADECE aşağıdaki alanları ayıkla ve temiz bir liste halinde ver. Eğer bir alan okunmuyorsa boş bırak.
 
@@ -114,7 +116,6 @@ db = veritabani_yukle()
 
 # --- WEB ARAYÜZÜ (UI) BAŞLANGICI ---
 
-# Sayfa Düzeni (Sol panel & Sağ panel)
 sol_panel, sag_panel = st.columns([1, 2], gap="large")
 
 with sol_panel:
@@ -135,7 +136,6 @@ with sol_panel:
                 ayiklanan_veri = ruhsat_oku(yuklenen_gorsel)
                 if ayiklanan_veri:
                     st.success("Veriler Ayıklandı!")
-                    # Veriyi kopyalanabilir bir alanda göster
                     st.text_area("Ayıklanan Bilgiler (Teklif ekranına kopyalayın)", value=ayiklanan_veri, height=250)
                     
     st.markdown("---")
@@ -144,23 +144,18 @@ with sol_panel:
 with sag_panel:
     st.subheader("💬 Mevzuat & Poliçe Sohbeti")
     
-    # Sohbet geçmişini tutmak için session_state kullanımı
     if "mesajlar" not in st.session_state:
         st.session_state.mesajlar = []
 
-    # Eski mesajları ekrana çizdir
     for mesaj in st.session_state.mesajlar:
         with st.chat_message(mesaj["rol"]):
             st.markdown(mesaj["icerik"])
 
-    # Kullanıcıdan yeni soru al
     if soru := st.chat_input("Sigorta poliçesi hakkında bir soru sorun..."):
-        # Kullanıcı mesajını ekrana ekle
         st.session_state.mesajlar.append({"rol": "user", "icerik": soru})
         with st.chat_message("user"):
             st.markdown(soru)
 
-        # Asistanın düşünüp cevap vermesi
         with st.chat_message("assistant"):
             with st.spinner("Mevzuat taranıyor..."):
                 soru_vektoru = metni_vektore_cevir(soru)
@@ -173,7 +168,7 @@ with sag_panel:
                 en_iyi_parcalar = [metin for skor, metin in skorlar[:5]]
                 baglam = "\n---\n".join(en_iyi_parcalar)
                 
-                prompt = f"Sen uzman bir sigorta danışmanısın.\nSoruları SADECE aşağıdaki bağlamdaki bilgilere dayanarak yanıtla. Hangi kaynaktan (örn: Kasko, DASK) faydalandığını belirt.\nEğer cevap bağlamda yoksa 'Elimdeki mevzuatta net bilgi yok' de ve uydurma.\n\nBağlam:\n{baglam}\n\nSoru: {soru}"
+                prompt = f"Sen Grimset Studio'nun uzman sigorta danışmanısın.\nSoruları SADECE aşağıdaki bağlamdaki bilgilere dayanarak yanıtla. Hangi kaynaktan (örn: Kasko, DASK) faydalandığını belirt.\nEğer cevap bağlamda yoksa 'Elimdeki mevzuatta net bilgi yok' de ve uydurma.\n\nBağlam:\n{baglam}\n\nSoru: {soru}"
 
                 response = client.models.generate_content(
                     model=TEXT_MODEL,
@@ -182,3 +177,14 @@ with sag_panel:
                 
                 st.markdown(response.text)
                 st.session_state.mesajlar.append({"rol": "assistant", "icerik": response.text})
+
+    # --- SOHBETİ İNDİR BUTONU ---
+    if st.session_state.mesajlar:
+        st.markdown("---")
+        sohbet_metni = "\n".join([f"{m['rol'].upper()}: {m['icerik']}\n" for m in st.session_state.mesajlar])
+        st.download_button(
+            label="📄 Sohbet Geçmişini İndir", 
+            data=sohbet_metni, 
+            file_name="grimset_sohbet_gecmisi.txt", 
+            use_container_width=True
+        )
