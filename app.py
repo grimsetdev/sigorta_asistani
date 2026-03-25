@@ -27,7 +27,6 @@ BELGELER_KLASORU = "belgeler"
 
 # --- 1. AŞAMA: VERİTABANI (CRM) KURULUMU ---
 def veritabani_kur():
-    """SQLite veritabanını ve gerekli tabloları oluşturur."""
     conn = sqlite3.connect('grimset_crm.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS ruhsat_kayitlari
@@ -38,7 +37,6 @@ def veritabani_kur():
     conn.close()
 
 def ruhsat_kaydet(veri):
-    """Ayıklanan veriyi tarih damgasıyla veritabanına yazar."""
     conn = sqlite3.connect('grimset_crm.db')
     c = conn.cursor()
     zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -46,9 +44,7 @@ def ruhsat_kaydet(veri):
     conn.commit()
     conn.close()
 
-# Uygulama başlarken veritabanını hazırla
 veritabani_kur()
-
 
 # --- Arka Plan Fonksiyonları (Vektör & OCR) ---
 def metni_vektore_cevir(metin):
@@ -136,78 +132,115 @@ Asla yorum yapma, sadece verileri döndür."""
 
 db = veritabani_yukle()
 
-# --- WEB ARAYÜZÜ (UI) ---
-sol_panel, sag_panel = st.columns([1, 2], gap="large")
+# --- 2. AŞAMA: YAN MENÜ VE YÖNETİCİ PANELİ (YENİ EKLENDİ) ---
 
-with sol_panel:
-    st.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=200)
-    st.title("🛡️ Sigorta Otomasyonu")
-    st.markdown("---")
-    
-    st.subheader("📷 Ruhsat/Evrak Okuma")
-    st.write("Müşteriden gelen ruhsat fotoğrafını yükleyin, verileri anında ayıklayalım.")
-    
-    yuklenen_gorsel = st.file_uploader("Ruhsat fotoğrafı yükle...", type=["jpg", "jpeg", "png"])
-    
-    if yuklenen_gorsel:
-        st.image(yuklenen_gorsel, caption="Yüklenen Görsel", use_container_width=True)
-        
-        if st.button("Verileri Ayıkla ve Sisteme Kaydet 🚀", use_container_width=True):
-            with st.spinner("Gemini Vision çalışıyor..."):
-                ayiklanan_veri = ruhsat_oku(yuklenen_gorsel)
-                if ayiklanan_veri:
-                    # Yeni Eklenen CRM Kayıt İşlemi
-                    ruhsat_kaydet(ayiklanan_veri)
-                    
-                    st.success("Veriler Ayıklandı ve Veritabanına Kaydedildi!")
-                    st.text_area("Ayıklanan Bilgiler", value=ayiklanan_veri, height=250)
-                    
-    st.markdown("---")
-    st.info("İpucu: Mevzuat sorularını sağdaki sohbet panelinden sorun.")
+st.sidebar.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=150)
+st.sidebar.title("Grimset Menü")
+sayfa = st.sidebar.radio("Sayfa Seçimi:", ["Ana Sayfa (Müşteri & Asistan)", "Yönetici Paneli (Admin)"])
+st.sidebar.markdown("---")
+st.sidebar.caption("Grimset Studio © 2026")
 
-with sag_panel:
-    st.subheader("💬 Mevzuat & Poliçe Sohbeti")
-    
-    if "mesajlar" not in st.session_state:
-        st.session_state.mesajlar = []
+if sayfa == "Ana Sayfa (Müşteri & Asistan)":
+    # --- WEB ARAYÜZÜ (UI) - ANA SAYFA ---
+    sol_panel, sag_panel = st.columns([1, 2], gap="large")
 
-    for mesaj in st.session_state.mesajlar:
-        with st.chat_message(mesaj["rol"]):
-            st.markdown(mesaj["icerik"])
-
-    if soru := st.chat_input("Sigorta poliçesi hakkında bir soru sorun..."):
-        st.session_state.mesajlar.append({"rol": "user", "icerik": soru})
-        with st.chat_message("user"):
-            st.markdown(soru)
-
-        with st.chat_message("assistant"):
-            with st.spinner("Mevzuat taranıyor..."):
-                soru_vektoru = metni_vektore_cevir(soru)
-                skorlar = []
-                for item in db:
-                    skor = benzerlik_hesapla(soru_vektoru, item["vektor"])
-                    skorlar.append((skor, item["metin"]))
-                
-                skorlar.sort(key=lambda x: x[0], reverse=True)
-                en_iyi_parcalar = [metin for skor, metin in skorlar[:5]]
-                baglam = "\n---\n".join(en_iyi_parcalar)
-                
-                prompt = f"Sen Grimset Studio'nun uzman sigorta danışmanısın.\nSoruları SADECE aşağıdaki bağlamdaki bilgilere dayanarak yanıtla. Hangi kaynaktan (örn: Kasko, DASK) faydalandığını belirt.\nEğer cevap bağlamda yoksa 'Elimdeki mevzuatta net bilgi yok' de ve uydurma.\n\nBağlam:\n{baglam}\n\nSoru: {soru}"
-
-                response = client.models.generate_content(
-                    model=TEXT_MODEL,
-                    contents=prompt
-                )
-                
-                st.markdown(response.text)
-                st.session_state.mesajlar.append({"rol": "assistant", "icerik": response.text})
-
-    if st.session_state.mesajlar:
+    with sol_panel:
+        st.title("🛡️ Sigorta Otomasyonu")
         st.markdown("---")
-        sohbet_metni = "\n".join([f"{m['rol'].upper()}: {m['icerik']}\n" for m in st.session_state.mesajlar])
-        st.download_button(
-            label="📄 Sohbet Geçmişini İndir", 
-            data=sohbet_metni, 
-            file_name="grimset_sohbet_gecmisi.txt", 
-            use_container_width=True
-        )
+        
+        st.subheader("📷 Ruhsat/Evrak Okuma")
+        st.write("Müşteriden gelen ruhsat fotoğrafını yükleyin, verileri anında ayıklayalım.")
+        
+        yuklenen_gorsel = st.file_uploader("Ruhsat fotoğrafı yükle...", type=["jpg", "jpeg", "png"])
+        
+        if yuklenen_gorsel:
+            st.image(yuklenen_gorsel, caption="Yüklenen Görsel", use_container_width=True)
+            
+            if st.button("Verileri Ayıkla ve Sisteme Kaydet 🚀", use_container_width=True):
+                with st.spinner("Gemini Vision çalışıyor..."):
+                    ayiklanan_veri = ruhsat_oku(yuklenen_gorsel)
+                    if ayiklanan_veri:
+                        ruhsat_kaydet(ayiklanan_veri) # Veritabanına yazıyor
+                        st.success("Veriler Ayıklandı ve Veritabanına Kaydedildi!")
+                        st.text_area("Ayıklanan Bilgiler", value=ayiklanan_veri, height=250)
+                        
+        st.markdown("---")
+        st.info("İpucu: Mevzuat sorularını sağdaki sohbet panelinden sorun.")
+
+    with sag_panel:
+        st.subheader("💬 Mevzuat & Poliçe Sohbeti")
+        
+        if "mesajlar" not in st.session_state:
+            st.session_state.mesajlar = []
+
+        for mesaj in st.session_state.mesajlar:
+            with st.chat_message(mesaj["rol"]):
+                st.markdown(mesaj["icerik"])
+
+        if soru := st.chat_input("Sigorta poliçesi hakkında bir soru sorun..."):
+            st.session_state.mesajlar.append({"rol": "user", "icerik": soru})
+            with st.chat_message("user"):
+                st.markdown(soru)
+
+            with st.chat_message("assistant"):
+                with st.spinner("Mevzuat taranıyor..."):
+                    soru_vektoru = metni_vektore_cevir(soru)
+                    skorlar = []
+                    for item in db:
+                        skor = benzerlik_hesapla(soru_vektoru, item["vektor"])
+                        skorlar.append((skor, item["metin"]))
+                    
+                    skorlar.sort(key=lambda x: x[0], reverse=True)
+                    en_iyi_parcalar = [metin for skor, metin in skorlar[:5]]
+                    baglam = "\n---\n".join(en_iyi_parcalar)
+                    
+                    prompt = f"Sen Grimset Studio'nun uzman sigorta danışmanısın.\nSoruları SADECE aşağıdaki bağlamdaki bilgilere dayanarak yanıtla. Hangi kaynaktan (örn: Kasko, DASK) faydalandığını belirt.\nEğer cevap bağlamda yoksa 'Elimdeki mevzuatta net bilgi yok' de ve uydurma.\n\nBağlam:\n{baglam}\n\nSoru: {soru}"
+
+                    response = client.models.generate_content(
+                        model=TEXT_MODEL,
+                        contents=prompt
+                    )
+                    
+                    st.markdown(response.text)
+                    st.session_state.mesajlar.append({"rol": "assistant", "icerik": response.text})
+
+        if st.session_state.mesajlar:
+            st.markdown("---")
+            sohbet_metni = "\n".join([f"{m['rol'].upper()}: {m['icerik']}\n" for m in st.session_state.mesajlar])
+            st.download_button(
+                label="📄 Sohbet Geçmişini İndir", 
+                data=sohbet_metni, 
+                file_name="grimset_sohbet_gecmisi.txt", 
+                use_container_width=True
+            )
+
+elif sayfa == "Yönetici Paneli (Admin)":
+    # --- YÖNETİCİ PANELİ (ADMIN) ---
+    st.title("🔒 Yönetici Paneli")
+    st.write("Bu alan sadece Grimset Studio yöneticilerine özeldir.")
+    st.markdown("---")
+
+    sifre = st.text_input("Yönetici Şifrenizi Girin:", type="password")
+
+    if sifre == "Grimset2026":
+        st.success("Giriş Başarılı! CRM Kayıtları Yükleniyor...")
+        
+        # SQLite'tan verileri çek
+        conn = sqlite3.connect('grimset_crm.db')
+        c = conn.cursor()
+        c.execute("SELECT id, tarih, ayiklanan_veri FROM ruhsat_kayitlari ORDER BY id DESC")
+        kayitlar = c.fetchall()
+        conn.close()
+
+        st.subheader(f"Toplam Okunan Evrak Sayısı: {len(kayitlar)}")
+        
+        if kayitlar:
+            for kayit in kayitlar:
+                # Her bir kaydı genişleyebilir bir akordeon (expander) içine koyuyoruz
+                with st.expander(f"Kayıt #{kayit[0]} | İşlem Tarihi: {kayit[1]}"):
+                    st.text(kayit[2])
+        else:
+            st.info("Sistemde henüz kaydedilmiş bir ruhsat verisi bulunmuyor.")
+            
+    elif sifre:
+        st.error("Hatalı şifre girdiniz!")
