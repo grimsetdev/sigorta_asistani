@@ -36,10 +36,14 @@ def sheets_baglantisi_kur():
             "https://www.googleapis.com/auth/drive"
         ]
         
-        # KRİTİK DEĞİŞİKLİK: Streamlit Secrets'taki "google_json" metnini alıp JSON nesnesine çeviriyoruz.
-        # Bu sayede \n hataları tamamen ortadan kalkıyor.
-        skey = json.loads(st.secrets["google_json"])
+        # Hata engelleyici (strict=False) ile JSON'ı okuyoruz
+        raw_data = st.secrets["google_json"]
+        skey = json.loads(raw_data, strict=False)
         
+        # Şifre içindeki satır atlamalarını Google'ın istediği formata çeviriyoruz
+        if "\\n" in skey.get("private_key", ""):
+            skey["private_key"] = skey["private_key"].replace("\\n", "\n")
+            
         credentials = Credentials.from_service_account_info(skey, scopes=scopes)
         gc = gspread.authorize(credentials)
         
