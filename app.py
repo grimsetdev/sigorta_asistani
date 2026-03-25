@@ -1,7 +1,8 @@
 import os
 import math
 import pickle
-import json # YENİ EKLENDİ: JSON verisini okumak için
+import json
+import urllib.parse # WhatsApp URL otomasyonu için eklendi
 import streamlit as st
 from datetime import datetime
 from pypdf import PdfReader
@@ -12,7 +13,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # --- Sayfa Ayarları ---
-st.set_page_config(page_title="Grimset AI | Sigorta Otomasyonu", page_icon="🏢", layout="wide")
+st.set_page_config(page_title="Grimset AI | Sigorta Otomasyonu", page_icon="🛡️", layout="wide")
 
 # --- API VE GÜVENLİK AYARLARI ---
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
@@ -27,7 +28,7 @@ TEXT_MODEL = 'gemini-2.5-flash'
 HAFIZA_DOSYASI = "vektor_hafizasi.pkl"
 BELGELER_KLASORU = "belgeler"
 
-# --- 1. AŞAMA: GOOGLE SHEETS (CANLI CRM) BAĞLANTISI ---
+# --- GOOGLE SHEETS (CANLI CRM) BAĞLANTISI ---
 @st.cache_resource
 def sheets_baglantisi_kur():
     try:
@@ -35,22 +36,15 @@ def sheets_baglantisi_kur():
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        
-        # Hata engelleyici (strict=False) ile JSON'ı okuyoruz
         raw_data = st.secrets["google_json"]
         skey = json.loads(raw_data, strict=False)
-        
-        # Şifre içindeki satır atlamalarını Google'ın istediği formata çeviriyoruz
         if "\\n" in skey.get("private_key", ""):
             skey["private_key"] = skey["private_key"].replace("\\n", "\n")
             
         credentials = Credentials.from_service_account_info(skey, scopes=scopes)
         gc = gspread.authorize(credentials)
-        
-        # Grimset_CRM adlı excel dosyasını bulur
         sh = gc.open("Grimset_CRM")
         
-        # Sekmeler yoksa oluşturur
         try:
             ws_musteri = sh.worksheet("Müşteri Portföyü")
         except:
@@ -70,7 +64,7 @@ def sheets_baglantisi_kur():
 
 sh = sheets_baglantisi_kur()
 
-# --- Arka Plan Fonksiyonları (Vektör, OCR, PDF) ---
+# --- Arka Plan Fonksiyonları ---
 def metni_vektore_cevir(metin):
     response = client.models.embed_content(model='gemini-embedding-001', contents=metin)
     return response.embeddings[0].values
@@ -147,15 +141,15 @@ db = veritabani_yukle()
 
 # --- YAN MENÜ ---
 st.sidebar.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=150)
-st.sidebar.title("Sistem Modülleri")
-sayfa = st.sidebar.radio("Modül Seçimi:", ["Ana Sayfa (Müşteri Kayıt)", "📝 Poliçe Atölyesi", "Teklif Karşılaştırma", "Yönetici Paneli (Alarm)"])
+st.sidebar.title("Modüller")
+sayfa = st.sidebar.radio("İşlem Seçin:", ["📋 Kayıt", "📝 Poliçe Atölyesi", "⚖️ Karşılaştırma", "📊 Yönetici Paneli"])
 st.sidebar.markdown("---")
 st.sidebar.caption("Grimset Studio © 2026")
 
-if sayfa == "Ana Sayfa (Müşteri Kayıt)":
+if sayfa == "📋 Kayıt":
     sol_panel, sag_panel = st.columns([1, 2], gap="large")
     with sol_panel:
-        st.title("🏢 Sigorta Otomasyonu")
+        st.title("🛡️ Evrak Okuma")
         st.markdown("---")
         if "son_ocr" not in st.session_state: st.session_state.son_ocr = None
         yuklenen_gorsel = st.file_uploader("Ruhsat fotoğrafı yükle...", type=["jpg", "jpeg", "png"])
@@ -186,7 +180,7 @@ if sayfa == "Ana Sayfa (Müşteri Kayıt)":
                             st.error(f"Kayıt Hatası: {e}")
                     else: st.warning("Ad ve Plaka zorunlu veya Sheets bağlantısı kurulamadı.")
     with sag_panel:
-        st.subheader("⚖️ Mevzuat Sohbeti")
+        st.subheader("🤖 Mevzuat Sohbeti")
         if "mesajlar" not in st.session_state: st.session_state.mesajlar = []
         for mesaj in st.session_state.mesajlar:
             with st.chat_message(mesaj["rol"]): st.markdown(mesaj["icerik"])
@@ -208,6 +202,7 @@ elif sayfa == "📝 Poliçe Atölyesi":
     col1, col2 = st.columns([1, 1], gap="large")
     with col1:
         p_musteri = st.text_input("Müşteri Adı Soyadı")
+        p_tel = st.text_input("Müşteri Telefonu (5XX... formatında WhatsApp için opsiyonel)")
         p_plaka = st.text_input("Araç Plakası")
         p_tip = st.selectbox("Poliçe Tipi", ["Kasko", "Zorunlu Trafik Sigortası", "DASK"])
         teminat_cam = st.checkbox("Sınırsız Orijinal Cam Değişimi", value=True)
@@ -217,7 +212,7 @@ elif sayfa == "📝 Poliçe Atölyesi":
         tahmini_prim = 15000 + (5000 if p_tip=="Kasko" else 0) + (1200 if teminat_cam else 0) + (3000 if teminat_imm=="Sınırsız" else 0)
         prim_yazisi = f"{tahmini_prim:,} TL"
         st.info(f"**Tahmini Prim:** {prim_yazisi}")
-        teminat_ozeti = f"- Cam: {'Sinirsiz' if teminat_cam else 'Muafiyetli'}\n- Ikame: {teminat_ikame}\n- IMM: {teminat_imm}"
+        teminat_ozeti = f"- Cam: {'Sınırsız' if teminat_cam else 'Muafiyetli'}\n- İkame: {teminat_ikame}\n- İMM: {teminat_imm}"
         
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
@@ -233,8 +228,23 @@ elif sayfa == "📝 Poliçe Atölyesi":
         with col_btn2:
             if p_musteri and p_plaka:
                 st.download_button(label="📄 PDF İndir", data=pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi), file_name=f"Teklif_{p_plaka}.pdf", mime="application/pdf", use_container_width=True)
+        
+        # WhatsApp Entegrasyonu
+        if p_musteri and p_plaka:
+            st.markdown("---")
+            wp_mesaj = f"Merhaba {p_musteri},\nGrimset Studio güvencesiyle {p_plaka} plakalı aracınız için {p_tip} teklifiniz hazırlanmıştır.\n\n*Teminatlar:*\n{teminat_ozeti}\n\n*Toplam Tutar:* {prim_yazisi}\n\nDetaylı bilgi ve onay için bize dönüş yapabilirsiniz."
+            wp_url_mesaj = urllib.parse.quote(wp_mesaj)
+            
+            # Telefon numarası girildiyse direkt o numaraya, girilmediyse boş WhatsApp penceresine atar
+            if p_tel:
+                wp_tel = p_tel.replace(" ", "").replace("+90", "").replace("0", "", 1)
+                wa_link = f"https://wa.me/90{wp_tel}?text={wp_url_mesaj}"
+            else:
+                wa_link = f"https://wa.me/?text={wp_url_mesaj}"
+                
+            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 5px; font-weight: bold; width: 100%;">💬 WhatsApp\'tan Müşteriye Gönder</div></a>', unsafe_allow_html=True)
 
-elif sayfa == "Teklif Karşılaştırma":
+elif sayfa == "⚖️ Karşılaştırma":
     st.title("⚖️ Teklif Karşılaştırma Analizi")
     col1, col2 = st.columns(2)
     with col1:
@@ -247,15 +257,33 @@ elif sayfa == "Teklif Karşılaştırma":
         if st.button("Kıyasla"):
             st.markdown(teklif_karsilastir(t1, t2))
 
-elif sayfa == "Yönetici Paneli (Alarm)":
-    st.title("🔒 Yönetici Paneli")
-    st.info("Canlı Google Sheets Verileri Çekiliyor...")
+elif sayfa == "📊 Yönetici Paneli":
+    st.title("📊 Finansal Dashboard")
+    st.markdown("---")
+    
     if sh:
         try:
-            ws = sh.worksheet("Müşteri Portföyü")
-            kayitlar = ws.get_all_records()
-            st.subheader(f"Toplam Kayıtlı Müşteri: {len(kayitlar)}")
-            for k in kayitlar:
-                st.write(f"**{k['Vade Tarihi']}** | {k['Müşteri Adı']} - {k['Plaka']} | Tel: {k['Telefon']}")
+            ws_police = sh.worksheet("Üretilen Poliçeler")
+            policeler = ws_police.get_all_records()
+            
+            toplam_ciro = 0
+            for p in policeler:
+                # "16,200 TL" gibi metinleri saf sayıya çevirip topluyoruz
+                prim_str = str(p.get("Toplam Prim", "0")).replace(" TL", "").replace(",", "")
+                if prim_str.isdigit():
+                    toplam_ciro += int(prim_str)
+            
+            # Metrik Kartları (KPI)
+            col1, col2, col3 = st.columns(3)
+            col1.metric(label="💼 Toplam Kesilen Poliçe", value=f"{len(policeler)} Adet")
+            col2.metric(label="📈 Toplam Üretim (Ciro)", value=f"{toplam_ciro:,} TL")
+            col3.metric(label="🎯 Aktif Müşteri", value="Excel'e Bağlı")
+            
+            st.markdown("---")
+            st.subheader("Son Kesilen 5 Poliçe")
+            # Listeyi ters çevirip en son eklenenleri en üstte gösterir
+            for p in reversed(policeler[-5:]):
+                st.write(f"🏷️ **{p.get('Müşteri Adı', 'Bilinmiyor')}** - {p.get('Poliçe Tipi', '')} | {p.get('Toplam Prim', '')} | Plaka: {p.get('Plaka', '')}")
+                
         except Exception as e:
-            st.error("Henüz kayıt bulunamadı veya sekme okunamadı.")
+            st.warning("Veriler hesaplanırken bir sorun oluştu veya Excel sekmesi boş. Lütfen Poliçe Atölyesinden veri kaydedin.")
