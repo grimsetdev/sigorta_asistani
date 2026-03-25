@@ -35,6 +35,11 @@ def sheets_baglantisi_kur():
             "https://www.googleapis.com/auth/drive"
         ]
         skey = dict(st.secrets["gcp_service_account"])
+        
+        # KRİTİK DÜZELTME: TOML'dan gelen bozuk satır atlamalarını (\n) gerçek alt satıra çevir
+        if "\\n" in skey["private_key"]:
+            skey["private_key"] = skey["private_key"].replace("\\n", "\n")
+            
         credentials = Credentials.from_service_account_info(skey, scopes=scopes)
         gc = gspread.authorize(credentials)
         
@@ -56,7 +61,7 @@ def sheets_baglantisi_kur():
             
         return sh
     except Exception as e:
-        st.error(f"Google Sheets Bağlantı Hatası: Lütfen Secrets ayarlarını ve Excel dosya adını (Grimset_CRM) kontrol edin. Detay: {e}")
+        st.error(f"Google Sheets Bağlantı Hatası: Lütfen Secrets ayarlarını kontrol edin. Detay: {e}")
         return None
 
 sh = sheets_baglantisi_kur()
