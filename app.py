@@ -1,6 +1,7 @@
 import os
 import math
 import pickle
+import json # YENİ EKLENDİ: JSON verisini okumak için
 import streamlit as st
 from datetime import datetime
 from pypdf import PdfReader
@@ -34,12 +35,11 @@ def sheets_baglantisi_kur():
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        skey = dict(st.secrets["gcp_service_account"])
         
-        # KRİTİK DÜZELTME: TOML'dan gelen bozuk satır atlamalarını (\n) gerçek alt satıra çevir
-        if "\\n" in skey["private_key"]:
-            skey["private_key"] = skey["private_key"].replace("\\n", "\n")
-            
+        # KRİTİK DEĞİŞİKLİK: Streamlit Secrets'taki "google_json" metnini alıp JSON nesnesine çeviriyoruz.
+        # Bu sayede \n hataları tamamen ortadan kalkıyor.
+        skey = json.loads(st.secrets["google_json"])
+        
         credentials = Credentials.from_service_account_info(skey, scopes=scopes)
         gc = gspread.authorize(credentials)
         
@@ -61,7 +61,7 @@ def sheets_baglantisi_kur():
             
         return sh
     except Exception as e:
-        st.error(f"Google Sheets Bağlantı Hatası: Lütfen Secrets ayarlarını kontrol edin. Detay: {e}")
+        st.error(f"Google Sheets Bağlantı Hatası. Detay: {e}")
         return None
 
 sh = sheets_baglantisi_kur()
