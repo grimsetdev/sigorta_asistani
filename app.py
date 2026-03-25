@@ -1,22 +1,22 @@
 import os
 import math
 import pickle
-import sqlite3
-from datetime import datetime
 import streamlit as st
+from datetime import datetime
 from pypdf import PdfReader
 from google import genai
 from PIL import Image
-from fpdf import FPDF # YENİ EKLENEN KÜTÜPHANE
+from fpdf import FPDF
+import gspread
+from google.oauth2.service_account import Credentials
 
 # --- Sayfa Ayarları ---
 st.set_page_config(page_title="Grimset AI | Sigorta Otomasyonu", page_icon="🏢", layout="wide")
 
-# --- API ANAHTARI VE GÜVENLİK AYARLARI ---
+# --- API VE GÜVENLİK AYARLARI ---
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
-
 if not api_key:
-    st.error("Lütfen Gemini API anahtarını Streamlit Secrets veya Ortam Değişkeni olarak ekleyin!")
+    st.error("Lütfen Gemini API anahtarını ekleyin!")
     st.stop()
 
 client = genai.Client(api_key=api_key)
@@ -26,19 +26,42 @@ TEXT_MODEL = 'gemini-2.5-flash'
 HAFIZA_DOSYASI = "vektor_hafizasi.pkl"
 BELGELER_KLASORU = "belgeler"
 
-# --- 1. AŞAMA: GELİŞMİŞ CRM VE POLİÇE VERİTABANI ---
-def veritabani_kur():
-    conn = sqlite3.connect('grimset_crm.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS ruhsat_kayitlari (id INTEGER PRIMARY KEY AUTOINCREMENT, tarih TEXT, ayiklanan_veri TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS musteri_portfoyu (id INTEGER PRIMARY KEY AUTOINCREMENT, musteri_adi TEXT, telefon TEXT, plaka TEXT, vade_tarihi DATE, eklenme_tarihi TEXT, ocr_verisi TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS uretilen_policeler (id INTEGER PRIMARY KEY AUTOINCREMENT, musteri_adi TEXT, plaka TEXT, police_tipi TEXT, teminatlar TEXT, toplam_prim TEXT, olusturulma_tarihi TEXT)''')
-    conn.commit()
-    conn.close()
+# --- 1. AŞAMA: GOOGLE SHEETS (CANLI CRM) BAĞLANTISI ---
+@st.cache_resource
+def sheets_baglantisi_kur():
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        skey = dict(st.secrets["gcp_service_account"])
+        credentials = Credentials.from_service_account_info(skey, scopes=scopes)
+        gc = gspread.authorize(credentials)
+        
+        # Grimset_CRM adlı excel dosyasını bulur
+        sh = gc.open("Grimset_CRM")
+        
+        # Sekmeler yoksa oluşturur
+        try:
+            ws_musteri = sh.worksheet("Müşteri Portföyü")
+        except:
+            ws_musteri = sh.add_worksheet(title="Müşteri Portföyü", rows="1000", cols="20")
+            ws_musteri.append_row(["Tarih", "Müşteri Adı", "Telefon", "Plaka", "Vade Tarihi", "OCR Detayı"])
 
-veritabani_kur()
+        try:
+            ws_police = sh.worksheet("Üretilen Poliçeler")
+        except:
+            ws_police = sh.add_worksheet(title="Üretilen Poliçeler", rows="1000", cols="20")
+            ws_police.append_row(["Tarih", "Müşteri Adı", "Plaka", "Poliçe Tipi", "Teminatlar", "Toplam Prim"])
+            
+        return sh
+    except Exception as e:
+        st.error(f"Google Sheets Bağlantı Hatası: Lütfen Secrets ayarlarını ve Excel dosya adını (Grimset_CRM) kontrol edin. Detay: {e}")
+        return None
 
-# --- Arka Plan Fonksiyonları (Vektör & OCR) ---
+sh = sheets_baglantisi_kur()
+
+# --- Arka Plan Fonksiyonları (Vektör, OCR, PDF) ---
 def metni_vektore_cevir(metin):
     response = client.models.embed_content(model='gemini-embedding-001', contents=metin)
     return response.embeddings[0].values
@@ -53,29 +76,20 @@ def benzerlik_hesapla(v1, v2):
 def hafizayi_olustur_ve_kaydet():
     if not os.path.exists(BELGELER_KLASORU):
         os.makedirs(BELGELER_KLASORU)
-        st.error(f"'{BELGELER_KLASORU}' klasörü oluşturuldu. İçine PDF ekleyin.")
         st.stop()
     pdf_dosyalari = [f for f in os.listdir(BELGELER_KLASORU) if f.endswith('.pdf')]
-    if not pdf_dosyalari:
-        st.error("Klasörde hiç PDF bulunamadı!")
-        st.stop()
+    if not pdf_dosyalari: return []
     tam_metin = ""
     for dosya in pdf_dosyalari:
-        dosya_yolu = os.path.join(BELGELER_KLASORU, dosya)
-        reader = PdfReader(dosya_yolu)
+        reader = PdfReader(os.path.join(BELGELER_KLASORU, dosya))
         for sayfa in reader.pages:
             if sayfa.extract_text():
                 tam_metin += f"\n[Kaynak: {dosya}]\n" + sayfa.extract_text() + "\n"
-    chunk_size = 1000
-    parcalar = [tam_metin[i:i+chunk_size] for i in range(0, len(tam_metin), chunk_size)]
+    parcalar = [tam_metin[i:i+1000] for i in range(0, len(tam_metin), 1000)]
     veritabani = []
-    progress_bar = st.progress(0)
-    for i, parca in enumerate(parcalar):
+    for parca in parcalar:
         if len(parca.strip()) > 50: 
-            vektor = metni_vektore_cevir(parca)
-            veritabani.append({"metin": parca, "vektor": vektor})
-        progress_bar.progress((i + 1) / len(parcalar))
-    progress_bar.empty()
+            veritabani.append({"metin": parca, "vektor": metni_vektore_cevir(parca)})
     with open(HAFIZA_DOSYASI, 'wb') as f:
         pickle.dump(veritabani, f)
     return veritabani
@@ -85,63 +99,39 @@ def veritabani_yukle():
     if os.path.exists(HAFIZA_DOSYASI):
         with open(HAFIZA_DOSYASI, 'rb') as f:
             return pickle.load(f)
-    else:
-        with st.spinner("PDF'ler taranıyor..."):
-            return hafizayi_olustur_ve_kaydet()
+    return hafizayi_olustur_ve_kaydet()
 
 def ruhsat_oku(gorsel_dosya):
-    gorsel = Image.open(gorsel_dosya)
-    prompt = """Sen analitik bir OCR asistanısın. Gönderilen fotoğrafı analiz et. SADECE alanları ayıkla ve temiz liste ver."""
+    prompt = "Sen analitik bir OCR asistanısın. Gönderilen fotoğrafı analiz et. SADECE alanları ayıkla ve temiz liste ver."
     try:
-        response = client.models.generate_content(model=VISION_MODEL, contents=[prompt, gorsel])
-        return response.text
-    except Exception as e:
-        return None
+        return client.models.generate_content(model=VISION_MODEL, contents=[prompt, Image.open(gorsel_dosya)]).text
+    except: return None
 
 def teklif_karsilastir(gorsel_1, gorsel_2):
-    img1 = Image.open(gorsel_1)
-    img2 = Image.open(gorsel_2)
-    prompt = """Sen Grimset Studio'nun yetenekli sigorta satış uzmanısın. İki teklifi kıyasla ve raporla."""
+    prompt = "Sen Grimset Studio'nun yetenekli sigorta satış uzmanısın. İki teklifi kıyasla ve raporla."
     try:
-        response = client.models.generate_content(model=VISION_MODEL, contents=[prompt, img1, img2])
-        return response.text
-    except Exception as e:
-        return None
+        return client.models.generate_content(model=VISION_MODEL, contents=[prompt, Image.open(gorsel_1), Image.open(gorsel_2)]).text
+    except: return None
 
-# --- YENİ: PDF ÜRETME FONKSİYONU ---
 def pdf_olustur(musteri, plaka, tip, teminatlar, prim):
     pdf = FPDF()
     pdf.add_page()
-    
-    # Türkçe karakterleri PDF için basit formata çeviriyoruz
     tr_map = str.maketrans("ğüşöçıİĞÜŞÖÇ", "gusociIGUSOC")
-    
-    # Başlık
     pdf.set_font("Arial", "B", 16)
     pdf.cell(0, 10, "GRIMSET STUDIO - POLICE TEKLIFI", ln=True, align="C")
     pdf.ln(10)
-    
-    # İçerik
     pdf.set_font("Arial", "", 12)
-    pdf.cell(0, 10, f"Musteri Ad/Soyad: {musteri.translate(tr_map)}", ln=True)
+    pdf.cell(0, 10, f"Musteri: {musteri.translate(tr_map)}", ln=True)
     pdf.cell(0, 10, f"Arac Plakasi: {plaka.translate(tr_map)}", ln=True)
     pdf.cell(0, 10, f"Police Tipi: {tip.translate(tr_map)}", ln=True)
     pdf.ln(5)
-    
     pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 10, "Secili Teminatlar ve Kapsam:", ln=True)
+    pdf.cell(0, 10, "Secili Teminatlar:", ln=True)
     pdf.set_font("Arial", "", 12)
     pdf.multi_cell(0, 10, teminatlar.translate(tr_map))
     pdf.ln(10)
-    
-    # Fiyat
     pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, f"Hesaplanan Toplam Prim: {prim}", ln=True)
-    
-    pdf.ln(20)
-    pdf.set_font("Arial", "I", 10)
-    pdf.cell(0, 10, "Bu belge Grimset Studio Sigorta Otomasyonu tarafindan uretilmistir.", ln=True, align="C")
-    
+    pdf.cell(0, 10, f"Toplam Prim: {prim}", ln=True)
     return pdf.output(dest="S").encode("latin-1")
 
 db = veritabani_yukle()
@@ -149,27 +139,20 @@ db = veritabani_yukle()
 # --- YAN MENÜ ---
 st.sidebar.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=150)
 st.sidebar.title("Sistem Modülleri")
-sayfa = st.sidebar.radio("Modül Seçimi:", [
-    "Ana Sayfa (Müşteri Kayıt)", 
-    "📝 Poliçe Atölyesi (Üretim)", 
-    "Teklif Karşılaştırma", 
-    "Yönetici Paneli (Alarm)"
-])
+sayfa = st.sidebar.radio("Modül Seçimi:", ["Ana Sayfa (Müşteri Kayıt)", "📝 Poliçe Atölyesi", "Teklif Karşılaştırma", "Yönetici Paneli (Alarm)"])
 st.sidebar.markdown("---")
 st.sidebar.caption("Grimset Studio © 2026")
 
 if sayfa == "Ana Sayfa (Müşteri Kayıt)":
-    # (Ana Sayfa kodları aynı kalıyor - Yer tasarrufu için önceki yapı korundu)
     sol_panel, sag_panel = st.columns([1, 2], gap="large")
     with sol_panel:
         st.title("🏢 Sigorta Otomasyonu")
         st.markdown("---")
-        st.subheader("📄 Ruhsat Ayıklama ve Kayıt")
         if "son_ocr" not in st.session_state: st.session_state.son_ocr = None
         yuklenen_gorsel = st.file_uploader("Ruhsat fotoğrafı yükle...", type=["jpg", "jpeg", "png"])
         if yuklenen_gorsel:
             st.image(yuklenen_gorsel, use_container_width=True)
-            if st.button("Belgeden Verileri Ayıkla", use_container_width=True):
+            if st.button("Verileri Ayıkla", use_container_width=True):
                 with st.spinner("Gemini Vision çalışıyor..."):
                     ayiklanan = ruhsat_oku(yuklenen_gorsel)
                     if ayiklanan:
@@ -181,17 +164,18 @@ if sayfa == "Ana Sayfa (Müşteri Kayıt)":
                 m_adi = st.text_input("Ad Soyad")
                 m_tel = st.text_input("Telefon")
                 m_plaka = st.text_input("Plaka")
-                m_vade = st.date_input("Vade")
-                if st.form_submit_button("Sisteme Kaydet"):
-                    if m_adi and m_plaka:
-                        conn = sqlite3.connect('grimset_crm.db')
-                        c = conn.cursor()
-                        c.execute("INSERT INTO musteri_portfoyu (musteri_adi, telefon, plaka, vade_tarihi, eklenme_tarihi, ocr_verisi) VALUES (?, ?, ?, ?, ?, ?)", (m_adi, m_tel, m_plaka, m_vade, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.session_state.son_ocr))
-                        conn.commit()
-                        conn.close()
-                        st.success("Kaydedildi!")
-                        st.session_state.son_ocr = None
-                    else: st.warning("Ad ve Plaka zorunlu.")
+                m_vade = st.date_input("Vade Tarihi")
+                if st.form_submit_button("Google Sheets'e Kaydet"):
+                    if m_adi and m_plaka and sh:
+                        try:
+                            zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            ws = sh.worksheet("Müşteri Portföyü")
+                            ws.append_row([zaman, m_adi, m_tel, m_plaka, str(m_vade), st.session_state.son_ocr])
+                            st.success("Veriler anında Google Sheets'e işlendi!")
+                            st.session_state.son_ocr = None
+                        except Exception as e:
+                            st.error(f"Kayıt Hatası: {e}")
+                    else: st.warning("Ad ve Plaka zorunlu veya Sheets bağlantısı kurulamadı.")
     with sag_panel:
         st.subheader("⚖️ Mevzuat Sohbeti")
         if "mesajlar" not in st.session_state: st.session_state.mesajlar = []
@@ -209,67 +193,39 @@ if sayfa == "Ana Sayfa (Müşteri Kayıt)":
                     st.markdown(response.text)
                     st.session_state.mesajlar.append({"rol": "assistant", "icerik": response.text})
 
-elif sayfa == "📝 Poliçe Atölyesi (Üretim)":
-    st.title("📝 Poliçe Atölyesi (Üretim & Düzenleme)")
+elif sayfa == "📝 Poliçe Atölyesi":
+    st.title("📝 Poliçe Atölyesi (Üretim)")
     st.markdown("---")
-
     col1, col2 = st.columns([1, 1], gap="large")
-    
     with col1:
-        st.subheader("1. Müşteri & Araç Bilgileri")
-        p_musteri = st.text_input("Müşteri Adı Soyadı", placeholder="Örn: Ahmet Yılmaz")
-        p_plaka = st.text_input("Araç Plakası", placeholder="Örn: 34 GRM 26")
-        p_tip = st.selectbox("Poliçe Tipi", ["Genişletilmiş Kasko", "Dar Kasko", "Zorunlu Trafik Sigortası", "DASK"])
-        
-        st.subheader("2. Teminat Seçimleri")
+        p_musteri = st.text_input("Müşteri Adı Soyadı")
+        p_plaka = st.text_input("Araç Plakası")
+        p_tip = st.selectbox("Poliçe Tipi", ["Kasko", "Zorunlu Trafik Sigortası", "DASK"])
         teminat_cam = st.checkbox("Sınırsız Orijinal Cam Değişimi", value=True)
         teminat_ikame = st.selectbox("İkame Araç Süresi", ["Yılda 2 Kez, 15 Gün", "Yılda 2 Kez, 7 Gün", "İkame Araç Yok"])
-        teminat_imm = st.select_slider("İhtiyari Mali Mesuliyet (İMM) Limiti", options=["1.000.000 TL", "5.000.000 TL", "10.000.000 TL", "Sınırsız"], value="10.000.000 TL")
-        teminat_yurtdisi = st.checkbox("Yurtdışı Teminatı (Opsiyonel)")
-        
+        teminat_imm = st.select_slider("İMM Limiti", options=["1.000.000 TL", "5.000.000 TL", "Sınırsız"], value="5.000.000 TL")
     with col2:
-        st.subheader("3. Prim & Taslak Özeti")
-        tahmini_prim = 15000
-        if p_tip == "Genişletilmiş Kasko": tahmini_prim += 5000
-        if teminat_cam: tahmini_prim += 1200
-        if teminat_imm == "Sınırsız": tahmini_prim += 3000
-        if teminat_yurtdisi: tahmini_prim += 2500
-        
+        tahmini_prim = 15000 + (5000 if p_tip=="Kasko" else 0) + (1200 if teminat_cam else 0) + (3000 if teminat_imm=="Sınırsız" else 0)
         prim_yazisi = f"{tahmini_prim:,} TL"
-        st.info(f"**Hesaplanan Tahmini Prim:** {prim_yazisi}")
-        
-        teminat_ozeti = f"- Cam: {'Orijinal (Sinirsiz)' if teminat_cam else 'Muafiyetli'}\n- Ikame Arac: {teminat_ikame}\n- IMM Limiti: {teminat_imm}\n- Yurtdisi: {'Var' if teminat_yurtdisi else 'Yok'}"
-        
-        st.text(f"Müşteri: {p_musteri}\nPlaka: {p_plaka}\nÜrün: {p_tip}\n\nTeminatlar:\n{teminat_ozeti}")
+        st.info(f"**Tahmini Prim:** {prim_yazisi}")
+        teminat_ozeti = f"- Cam: {'Sinirsiz' if teminat_cam else 'Muafiyetli'}\n- Ikame: {teminat_ikame}\n- IMM: {teminat_imm}"
         
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
-            if st.button("💾 Sisteme Kaydet", type="primary", use_container_width=True):
-                if p_musteri and p_plaka:
-                    conn = sqlite3.connect('grimset_crm.db')
-                    c = conn.cursor()
-                    c.execute("INSERT INTO uretilen_policeler (musteri_adi, plaka, police_tipi, teminatlar, toplam_prim, olusturulma_tarihi) VALUES (?, ?, ?, ?, ?, ?)", (p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                    conn.commit()
-                    conn.close()
-                    st.success("Kaydedildi!")
-                else: st.error("Eksik bilgi!")
-        
+            if st.button("💾 Google Sheets'e Kaydet", type="primary", use_container_width=True):
+                if p_musteri and p_plaka and sh:
+                    try:
+                        ws = sh.worksheet("Üretilen Poliçeler")
+                        zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        ws.append_row([zaman, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi])
+                        st.success("Google Sheets'e Kaydedildi!")
+                    except Exception as e:
+                        st.error(f"Kayıt Hatası: {e}")
         with col_btn2:
-            # YENİ EKLENEN PDF İNDİRME BUTONU
             if p_musteri and p_plaka:
-                pdf_dosyasi = pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi)
-                st.download_button(
-                    label="📄 PDF Olarak İndir",
-                    data=pdf_dosyasi,
-                    file_name=f"Grimset_Teklif_{p_plaka}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-            else:
-                st.button("📄 PDF Olarak İndir (Bilgileri Girin)", disabled=True, use_container_width=True)
+                st.download_button(label="📄 PDF İndir", data=pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi), file_name=f"Teklif_{p_plaka}.pdf", mime="application/pdf", use_container_width=True)
 
 elif sayfa == "Teklif Karşılaştırma":
-    # (Mevcut Karşılaştırma kodları)
     st.title("⚖️ Teklif Karşılaştırma Analizi")
     col1, col2 = st.columns(2)
     with col1:
@@ -283,14 +239,14 @@ elif sayfa == "Teklif Karşılaştırma":
             st.markdown(teklif_karsilastir(t1, t2))
 
 elif sayfa == "Yönetici Paneli (Alarm)":
-    # (Mevcut Yönetici Paneli)
     st.title("🔒 Yönetici Paneli")
-    sifre = st.text_input("Şifreniz:", type="password")
-    if sifre == "Grimset2026":
-        conn = sqlite3.connect('grimset_crm.db')
-        c = conn.cursor()
-        st.subheader("⏳ Yenilemeler")
-        c.execute("SELECT musteri_adi, plaka, vade_tarihi FROM musteri_portfoyu ORDER BY vade_tarihi ASC")
-        for k in c.fetchall():
-            st.write(f"{k[2]} | {k[0]} - {k[1]}")
-        conn.close()
+    st.info("Canlı Google Sheets Verileri Çekiliyor...")
+    if sh:
+        try:
+            ws = sh.worksheet("Müşteri Portföyü")
+            kayitlar = ws.get_all_records()
+            st.subheader(f"Toplam Kayıtlı Müşteri: {len(kayitlar)}")
+            for k in kayitlar:
+                st.write(f"**{k['Vade Tarihi']}** | {k['Müşteri Adı']} - {k['Plaka']} | Tel: {k['Telefon']}")
+        except Exception as e:
+            st.error("Henüz kayıt bulunamadı veya sekme okunamadı.")
