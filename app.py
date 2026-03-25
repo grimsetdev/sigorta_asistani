@@ -1,6 +1,8 @@
 import os
 import math
 import pickle
+import sqlite3
+from datetime import datetime
 import streamlit as st
 from pypdf import PdfReader
 from google import genai
@@ -10,14 +12,12 @@ from PIL import Image
 st.set_page_config(page_title="Grimset AI | Sigorta Otomasyonu", page_icon="🛡️", layout="wide")
 
 # --- API ANAHTARI VE GÜVENLİK AYARLARI ---
-# Streamlit Cloud'daki "Secrets" içinden veya yerel ortam değişkenlerinden anahtarı otomatik çeker
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
 
 if not api_key:
     st.error("Lütfen Gemini API anahtarını Streamlit Secrets veya Ortam Değişkeni olarak ekleyin!")
     st.stop()
 
-# Gemini modelleri başlatılıyor
 client = genai.Client(api_key=api_key)
 VISION_MODEL = 'gemini-2.5-flash'
 TEXT_MODEL = 'gemini-2.5-flash'
@@ -25,10 +25,33 @@ TEXT_MODEL = 'gemini-2.5-flash'
 HAFIZA_DOSYASI = "vektor_hafizasi.pkl"
 BELGELER_KLASORU = "belgeler"
 
-# --- Arka Plan Fonksiyonları (Vektör & OCR) ---
+# --- 1. AŞAMA: VERİTABANI (CRM) KURULUMU ---
+def veritabani_kur():
+    """SQLite veritabanını ve gerekli tabloları oluşturur."""
+    conn = sqlite3.connect('grimset_crm.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS ruhsat_kayitlari
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  tarih TEXT,
+                  ayiklanan_veri TEXT)''')
+    conn.commit()
+    conn.close()
 
+def ruhsat_kaydet(veri):
+    """Ayıklanan veriyi tarih damgasıyla veritabanına yazar."""
+    conn = sqlite3.connect('grimset_crm.db')
+    c = conn.cursor()
+    zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute("INSERT INTO ruhsat_kayitlari (tarih, ayiklanan_veri) VALUES (?, ?)", (zaman, veri))
+    conn.commit()
+    conn.close()
+
+# Uygulama başlarken veritabanını hazırla
+veritabani_kur()
+
+
+# --- Arka Plan Fonksiyonları (Vektör & OCR) ---
 def metni_vektore_cevir(metin):
-    # En güncel embedding modeli (Hata vermemesi için güncellendi)
     response = client.models.embed_content(
         model='gemini-embedding-001',
         contents=metin
@@ -111,15 +134,13 @@ Asla yorum yapma, sadece verileri döndür."""
         st.error(f"Görsel işleme hatası: {str(e)}")
         return None
 
-# Veritabanını Başlat
 db = veritabani_yukle()
 
-# --- WEB ARAYÜZÜ (UI) BAŞLANGICI ---
-
+# --- WEB ARAYÜZÜ (UI) ---
 sol_panel, sag_panel = st.columns([1, 2], gap="large")
 
 with sol_panel:
-    st.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=200) # Grimset logo (örnek)
+    st.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=200)
     st.title("🛡️ Sigorta Otomasyonu")
     st.markdown("---")
     
@@ -131,12 +152,15 @@ with sol_panel:
     if yuklenen_gorsel:
         st.image(yuklenen_gorsel, caption="Yüklenen Görsel", use_container_width=True)
         
-        if st.button("Verileri Ayıkla 🚀", use_container_width=True):
+        if st.button("Verileri Ayıkla ve Sisteme Kaydet 🚀", use_container_width=True):
             with st.spinner("Gemini Vision çalışıyor..."):
                 ayiklanan_veri = ruhsat_oku(yuklenen_gorsel)
                 if ayiklanan_veri:
-                    st.success("Veriler Ayıklandı!")
-                    st.text_area("Ayıklanan Bilgiler (Teklif ekranına kopyalayın)", value=ayiklanan_veri, height=250)
+                    # Yeni Eklenen CRM Kayıt İşlemi
+                    ruhsat_kaydet(ayiklanan_veri)
+                    
+                    st.success("Veriler Ayıklandı ve Veritabanına Kaydedildi!")
+                    st.text_area("Ayıklanan Bilgiler", value=ayiklanan_veri, height=250)
                     
     st.markdown("---")
     st.info("İpucu: Mevzuat sorularını sağdaki sohbet panelinden sorun.")
@@ -178,7 +202,6 @@ with sag_panel:
                 st.markdown(response.text)
                 st.session_state.mesajlar.append({"rol": "assistant", "icerik": response.text})
 
-    # --- SOHBETİ İNDİR BUTONU ---
     if st.session_state.mesajlar:
         st.markdown("---")
         sohbet_metni = "\n".join([f"{m['rol'].upper()}: {m['icerik']}\n" for m in st.session_state.mesajlar])
