@@ -29,8 +29,42 @@ st.markdown("""
     .stButton>button:hover { transform: scale(1.02); box-shadow: 0px 4px 15px rgba(0,0,0,0.1); }
     div[data-testid="metric-container"] { background-color: #1e1e1e; border: 1px solid #333; padding: 5% 5% 5% 10%; border-radius: 10px; box-shadow: 2px 2px 10px rgba(0,0,0,0.2); color: white; }
     [data-testid="stSidebar"] { background-color: #0e1117; border-right: 1px solid #2d2d2d; }
+    .login-box { max-width: 400px; margin: auto; padding: 2rem; border-radius: 10px; background-color: #1e1e1e; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
 </style>
 """, unsafe_allow_html=True)
+
+# --- OTURUM YÖNETİMİ (LOGIN SİSTEMİ) ---
+if "giris_yapildi" not in st.session_state:
+    st.session_state.giris_yapildi = False
+    st.session_state.rol = None
+    st.session_state.kullanici_adi = None
+
+if not st.session_state.giris_yapildi:
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1.2, 1])
+    with col2:
+        st.markdown('<div class="login-box">', unsafe_allow_html=True)
+        st.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=200)
+        st.markdown("<h3 style='text-align: center;'>Sistem Girişi</h3>", unsafe_allow_html=True)
+        
+        k_adi = st.text_input("Kullanıcı Adı")
+        sifre = st.text_input("Şifre", type="password")
+        
+        if st.button("Giriş Yap", use_container_width=True, type="primary"):
+            if k_adi == "admin" and sifre == "Grimset2026":
+                st.session_state.giris_yapildi = True
+                st.session_state.rol = "Admin"
+                st.session_state.kullanici_adi = "Yönetici"
+                st.rerun()
+            elif k_adi == "ali" and sifre == "satis123":
+                st.session_state.giris_yapildi = True
+                st.session_state.rol = "Satis"
+                st.session_state.kullanici_adi = "Ali (Satış)"
+                st.rerun()
+            else:
+                st.error("Hatalı kullanıcı adı veya şifre!")
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.stop() # Giriş yapılmadıysa kodun geri kalanını çalıştırmayı durdurur
 
 # --- API VE GÜVENLİK AYARLARI ---
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
@@ -55,17 +89,14 @@ def sheets_baglantisi_kur():
         credentials = Credentials.from_service_account_info(skey, scopes=scopes)
         gc = gspread.authorize(credentials)
         sh = gc.open("Grimset_CRM")
-        
         try: ws_musteri = sh.worksheet("Müşteri Portföyü")
         except:
             ws_musteri = sh.add_worksheet(title="Müşteri Portföyü", rows="1000", cols="20")
             ws_musteri.append_row(["Tarih", "Müşteri Adı", "Telefon", "Plaka", "Vade Tarihi", "OCR Detayı"])
-
         try: ws_police = sh.worksheet("Üretilen Poliçeler")
         except:
             ws_police = sh.add_worksheet(title="Üretilen Poliçeler", rows="1000", cols="20")
             ws_police.append_row(["Tarih", "Müşteri Adı", "Plaka", "Poliçe Tipi", "Teminatlar", "Toplam Prim"])
-            
         return sh
     except Exception as e:
         st.error(f"Google Sheets Bağlantı Hatası: {e}")
@@ -75,7 +106,6 @@ sh = sheets_baglantisi_kur()
 
 # --- Arka Plan Fonksiyonları ---
 def metni_vektore_cevir(metin): return client.models.embed_content(model='gemini-embedding-001', contents=metin).embeddings[0].values
-
 def benzerlik_hesapla(v1, v2):
     dot_product = sum(a * b for a, b in zip(v1, v2))
     mag1 = math.sqrt(sum(a * a for a in v1))
@@ -103,7 +133,6 @@ def veritabani_yukle():
         with open(HAFIZA_DOSYASI, 'rb') as f: return pickle.load(f)
     return hafizayi_olustur_ve_kaydet()
 
-# YENİ: ÇOKLU BELGE OKUMA FONKSİYONU
 def coklu_belge_oku(gorsel_dosyalari):
     prompt = """Sen analitik bir OCR asistanısın. Sana gönderilen tüm belgeleri (Kimlik, Ruhsat, Eski Poliçe vb.) aynı anda analiz et. 
 Belgelerdeki bilgileri harmanlayarak SADECE aşağıdaki alanları tek bir temiz liste halinde ver. Okunamayan verileri boş bırak:
@@ -117,11 +146,9 @@ Belgelerdeki bilgileri harmanlayarak SADECE aşağıdaki alanları tek bir temiz
 Asla yorum yapma."""
     try:
         icerik_listesi = [prompt]
-        for dosya in gorsel_dosyalari:
-            icerik_listesi.append(Image.open(dosya))
+        for dosya in gorsel_dosyalari: icerik_listesi.append(Image.open(dosya))
         return client.models.generate_content(model=VISION_MODEL, contents=icerik_listesi).text
-    except Exception as e: 
-        return f"Görsel İşleme Hatası: {e}"
+    except Exception as e: return f"Görsel İşleme Hatası: {e}"
 
 def teklif_karsilastir(gorsel_1, gorsel_2):
     try: return client.models.generate_content(model=VISION_MODEL, contents=["İki teklifi kıyasla ve raporla.", Image.open(gorsel_1), Image.open(gorsel_2)]).text
@@ -171,10 +198,21 @@ def eposta_gonder(alici_mail, musteri_adi, plaka, tip, teminatlar, prim, pdf_byt
 
 db = veritabani_yukle()
 
-# --- YAN MENÜ ---
+# --- YAN MENÜ VE ROL BAZLI ERİŞİM ---
 st.sidebar.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=150)
+st.sidebar.markdown(f"**👤 Aktif Kullanıcı:** {st.session_state.kullanici_adi}")
+if st.sidebar.button("🚪 Çıkış Yap", use_container_width=True):
+    st.session_state.giris_yapildi = False
+    st.rerun()
+st.sidebar.markdown("---")
 st.sidebar.title("Modüller")
-sayfa = st.sidebar.radio("İşlem Seçin:", ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "⚖️ Karşılaştırma", "⏰ Vade & Yenileme", "📊 Finansal Dashboard"])
+
+# Rol bazlı menü seçeneklerini belirle
+menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "⚖️ Karşılaştırma"]
+if st.session_state.rol == "Admin":
+    menu_secenekleri.extend(["⏰ Vade & Yenileme", "📊 Finansal Dashboard"])
+
+sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 st.sidebar.markdown("---")
 st.sidebar.caption("Grimset Studio © 2026")
 
@@ -187,11 +225,8 @@ if sayfa == "📋 Kayıt & Ayıklama":
         
         if "son_ocr" not in st.session_state: st.session_state.son_ocr = None
         
-        # YENİ: Çoklu Dosya Yükleme Alanı
         yuklenen_gorseller = st.file_uploader("Birden fazla belge seçebilirsiniz...", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
-        
         if yuklenen_gorseller:
-            # Yüklenen fotoğrafları yan yana küçük önizlemeler halinde göster
             gorsel_sutunlari = st.columns(len(yuklenen_gorseller))
             for idx, img in enumerate(yuklenen_gorseller):
                 gorsel_sutunlari[idx].image(img, use_container_width=True)
@@ -202,8 +237,7 @@ if sayfa == "📋 Kayıt & Ayıklama":
                     if ayiklanan and "Hata:" not in ayiklanan:
                         st.session_state.son_ocr = ayiklanan
                         st.success("Tüm belgeler harmanlandı!")
-                    else:
-                        st.error(ayiklanan)
+                    else: st.error(ayiklanan)
                         
         if st.session_state.son_ocr:
             st.text_area("Çapraz Analiz Sonuçları", value=st.session_state.son_ocr, height=220)
@@ -269,12 +303,11 @@ elif sayfa == "📝 Poliçe Atölyesi":
         if st.button("💡 Müşteriye Özel Satış Tüyosu Üret"):
             with st.spinner("Gemini satış stratejisi kurguluyor..."):
                 prompt = f"""Sen Grimset Studio'nun elit sigorta satış koçusun. Müşteri şu an '{p_tip}' poliçesi alıyor. Plakası: {p_plaka}. Teminatları: {teminat_ozeti}. 
-                Bu müşteriye gelirini artırmak için hangi ek sigorta ürününü (TSS, DASK, Konut vb.) satmalıyız? Satış temsilcisine 2-3 cümlelik harika, vurucu ve ikna edici bir cümle öner. Şöyle de: tarzında ver."""
+                Bu müşteriye gelirini artırmak için hangi ek sigorta ürününü (TSS, DASK, Konut vb.) satmalıyız? Satış temsilcisine 2-3 cümlelik harika, vurucu ve ikna edici bir cümle öner."""
                 try:
                     cevap = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
                     st.success(cevap)
-                except Exception as e:
-                    st.error("Yapay zeka asistanı şu an yanıt veremiyor.")
+                except Exception as e: st.error("Asistan şu an yanıt veremiyor.")
         st.markdown("---")
         
         col_btn1, col_btn2 = st.columns(2)
@@ -313,11 +346,10 @@ elif sayfa == "⚖️ Karşılaştırma":
     if t1 and t2:
         if st.button("Kıyasla"): st.markdown(teklif_karsilastir(t1, t2))
 
-elif sayfa == "⏰ Vade & Yenileme":
+elif sayfa == "⏰ Vade & Yenileme" and st.session_state.rol == "Admin":
     st.title("⏰ Akıllı Vade & Yenileme Panosu")
     st.markdown("Poliçesinin bitmesine 15 günden az kalan veya vadesi geçen müşterileri buradan tek tıkla yakalayın.")
     st.markdown("---")
-    
     if sh:
         try:
             musteriler = sh.worksheet("Müşteri Portföyü").get_all_records()
@@ -327,7 +359,6 @@ elif sayfa == "⏰ Vade & Yenileme":
                 
             bugun = datetime.now().date()
             yaklasanlar = []
-            
             for m in musteriler:
                 vade_str = str(m.get('Vade Tarihi', ''))
                 if vade_str:
@@ -337,8 +368,7 @@ elif sayfa == "⏰ Vade & Yenileme":
                         if kalan_gun <= 15:
                             m['kalan_gun'] = kalan_gun
                             yaklasanlar.append(m)
-                    except:
-                        pass
+                    except: pass
             
             if not yaklasanlar:
                 st.success("Harika! Yakın zamanda vadesi dolacak veya gecikmiş poliçe bulunmuyor. 🟢")
@@ -347,26 +377,19 @@ elif sayfa == "⏰ Vade & Yenileme":
                 for y in yaklasanlar:
                     k_gun = y['kalan_gun']
                     durum_renk = "🔴 VADESİ GEÇTİ!" if k_gun < 0 else (f"🟠 SON {k_gun} GÜN!" if k_gun <= 5 else f"🟡 {k_gun} Gün Kaldı")
-                    
                     with st.expander(f"{durum_renk} | {y.get('Müşteri Adı', '')} - Plaka: {y.get('Plaka', '')}"):
-                        st.write(f"**İletişim:** {y.get('Telefon', 'Belirtilmemiş')}")
-                        st.write(f"**Vade Tarihi:** {y.get('Vade Tarihi', '')}")
-                        
+                        st.write(f"**İletişim:** {y.get('Telefon', 'Belirtilmemiş')} | **Vade Tarihi:** {y.get('Vade Tarihi', '')}")
                         tel = str(y.get('Telefon', ''))
                         if tel:
                             vade_mesaji = urllib.parse.quote(f"Merhaba {y.get('Müşteri Adı', '')} Bey/Hanım,\nGrimset Studio güvencesindeki {y.get('Plaka', '')} plakalı aracınızın sigorta vadesine çok az bir süre kalmıştır. Yeni dönem teklifinizi en uygun fiyatlarla hazırlamamız için lütfen bu mesaja dönüş yapınız.")
                             wa_link = f"https://wa.me/90{tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={vade_mesaji}"
                             st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 8px; border-radius: 5px; font-weight: bold; margin-top: 10px;">💬 Otomatik Yenileme Mesajı At</div></a>', unsafe_allow_html=True)
-                        else:
-                            st.warning("Bu müşterinin telefon numarası kayıtlı değil.")
-                            
-        except Exception as e:
-            st.warning(f"Veriler çekilirken hata oluştu: {e}")
+                        else: st.warning("Bu müşterinin telefon numarası kayıtlı değil.")
+        except Exception as e: st.warning(f"Veriler çekilirken hata oluştu: {e}")
 
-elif sayfa == "📊 Finansal Dashboard":
+elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
     st.title("📊 Yönetici Finansal Dashboard")
     st.markdown("---")
-    
     if sh:
         try:
             policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
@@ -397,5 +420,4 @@ elif sayfa == "📊 Finansal Dashboard":
             st.subheader("Son İşlemler Geçmişi")
             st.dataframe(df[['Tarih', 'Müşteri Adı', 'Plaka', 'Poliçe Tipi', 'Toplam Prim']].tail(10).iloc[::-1], use_container_width=True)
             
-        except Exception as e:
-            st.warning(f"Dashboard yüklenirken hata oluştu: {e}")
+        except Exception as e: st.warning(f"Dashboard yüklenirken hata oluştu: {e}")
