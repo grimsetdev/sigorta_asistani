@@ -73,7 +73,6 @@ def sheets_baglantisi_kur():
         except:
             ws_filo = sh.add_worksheet(title="Filo Teklifleri", rows="1000", cols="20")
             ws_filo.append_row(["Tarih", "Firma Adı", "Araç Sayısı", "Plakalar", "Poliçe Tipi", "Toplam Prim", "Satış Temsilcisi", "Net Komisyon"])
-        # YENİ: Satış Hunisi (Kanban) Sekmesi
         try: ws_huni = sh.worksheet("Satış Hunisi")
         except:
             ws_huni = sh.add_worksheet(title="Satış Hunisi", rows="1000", cols="20")
@@ -143,7 +142,7 @@ if not st.session_state.giris_yapildi:
                                 giris_basarili = True
                                 st.rerun()
                                 break
-                        if not giris_basarili: st.error("Sistemde bu plaka ve telefon numarasıyla eşleşen bir kayıt bulunamadı.")
+                        if not giris_basarili: st.error("Sistemde bu plaka ve telefon numarasıyla eşleşen kayıt bulunamadı.")
                     except Exception as e: st.error(f"Veritabanı kontrol hatası: {e}")
                 else: st.warning("Lütfen plaka ve telefon numaranızı eksiksiz girin.")
         st.markdown('</div>', unsafe_allow_html=True)
@@ -225,10 +224,8 @@ def pdf_olustur(musteri, plaka, tip, teminatlar, prim, piyasa_fiyati=None, kazan
     pdf.cell(0, 10, "Secili Teminatlar:", ln=True)
     pdf.multi_cell(0, 10, teminatlar.translate(tr_map))
     pdf.ln(10)
-    
     pdf.set_font("Arial", "B", 14)
     pdf.cell(0, 10, f"Grimset Ozel Primi: {prim}", ln=True)
-    
     if piyasa_fiyati and kazanc:
         pdf.ln(2)
         pdf.set_font("Arial", "", 11)
@@ -238,7 +235,6 @@ def pdf_olustur(musteri, plaka, tip, teminatlar, prim, piyasa_fiyati=None, kazan
         pdf.set_font("Arial", "B", 13)
         pdf.cell(0, 10, f"Sizin Kazanciniz: {kazanc}", ln=True)
         pdf.set_text_color(0, 0, 0)
-        
     if ref_kodu:
         pdf.ln(15)
         pdf.set_fill_color(240, 240, 240)
@@ -250,7 +246,6 @@ def pdf_olustur(musteri, plaka, tip, teminatlar, prim, piyasa_fiyati=None, kazan
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", "", 10)
         pdf.multi_cell(0, 8, "Bu kodu arkadaslarinizla paylasin. Arkadaslariniz bu kodla aninda %5 indirim kazanirken, siz de bir sonraki police yenilemenizde %10 indirim kazanin!")
-
     return pdf.output(dest="S").encode("latin-1")
 
 def filo_pdf_olustur(firma, plaka_listesi, tip, prim):
@@ -315,7 +310,6 @@ st.sidebar.markdown("---")
 
 if st.session_state.rol in ["Admin", "Satis"]:
     st.sidebar.title("Modüller")
-    # YENİ: "📌 Satış Hunisi (Kanban)" sekmesi satış ve admine eklendi.
     menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏢 Kurumsal Filo (B2B)", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı", "⚖️ Karşılaştırma"]
     if st.session_state.rol == "Admin":
         menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "🕵️‍♂️ AI Müşteri Profilleme", "📊 Finansal Dashboard"])
@@ -443,8 +437,8 @@ elif sayfa == "📝 Poliçe Atölyesi":
         teminat_imm = st.select_slider("İMM Limiti", options=["1.000.000 TL", "5.000.000 TL", "Sınırsız"], value="5.000.000 TL")
         
         st.markdown("---")
-        st.markdown("### 🎁 Referans (Affiliate) İndirimi")
-        kullanilan_ref = st.text_input("Müşteri bir tanıdığının kodunu getirdi mi?", placeholder="Örn: MEHMET-123 (Opsiyonel)")
+        st.markdown("### 🎁 Referans İndirimi")
+        kullanilan_ref = st.text_input("Müşteri bir kod getirdi mi?", placeholder="Örn: MEHMET-123 (Opsiyonel)")
         
     with col2:
         tahmini_prim = 15000 + (5000 if p_tip=="Kasko" else 0) + (1200 if teminat_cam else 0) + (3000 if teminat_imm=="Sınırsız" else 0)
@@ -452,7 +446,7 @@ elif sayfa == "📝 Poliçe Atölyesi":
         if kullanilan_ref:
             ref_indirim = int(tahmini_prim * 0.05)
             tahmini_prim -= ref_indirim
-            st.success(f"🎉 Referans Kodu Onaylandı! Toplam fiyata {ref_indirim} TL ekstra indirim uygulandı.")
+            st.success(f"🎉 Referans Kodu Onaylandı! {ref_indirim} TL ekstra indirim uygulandı.")
             
         piyasa_primi = int(tahmini_prim * 1.18)
         avantaj_tutari = piyasa_primi - tahmini_prim
@@ -480,8 +474,8 @@ elif sayfa == "📝 Poliçe Atölyesi":
         
         st.markdown("---")
         if st.button("💡 Yapay Zeka Satış Tüyosu Üret"):
-            with st.spinner("Gemini satış stratejisi kurguluyor..."):
-                prompt = f"Sen elit satış koçusun. Müşteri '{p_tip}' poliçesi alıyor. Plakası: {p_plaka}. Bu müşteriye gelirini artırmak için hangi ek ürünü satmalıyız? İkna edici 2 cümle öner."
+            with st.spinner("Gemini strateji kurguluyor..."):
+                prompt = f"Sen satış koçusun. Müşteri '{p_tip}' alıyor. Bu müşteriye hangi ek ürünü satmalıyız? İkna edici 2 cümle öner."
                 try: st.success(client.models.generate_content(model=TEXT_MODEL, contents=prompt).text)
                 except: st.error("Asistan yanıt veremiyor.")
         st.markdown("---")
@@ -495,7 +489,7 @@ elif sayfa == "📝 Poliçe Atölyesi":
                         sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi, net_komisyon_yazisi])
                         try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_plaka, "", "Poliçe Atölyesinden Eklendi"])
                         except: pass
-                        st.success("Poliçe kesildi ve portföye işlendi!")
+                        st.success("Poliçe kesildi ve kaydedildi!")
                     except Exception as e: st.error(f"Hata: {e}")
         with col_btn2:
             if p_musteri and p_plaka:
@@ -503,12 +497,12 @@ elif sayfa == "📝 Poliçe Atölyesi":
         
         if p_musteri and p_plaka:
             st.markdown("---")
-            wp_mesaj = f"Merhaba {p_musteri},\nGrimset Studio güvencesiyle {p_plaka} plakalı aracınız için {p_tip} teklifiniz hazırlanmıştır.\n\nPiyasa Ortalaması: {piyasa_yazisi}\n*İndirimli Tutar:* {prim_yazisi}\nBu poliçeyle cebinizde kalan tutar: {avantaj_yazisi}!\n\n🎁 SİZE ÖZEL REFERANS KODUNUZ: {musteri_ozel_ref_kodu}\nBu kodu arkadaşlarınızla paylaşın, onlar bizden sigorta yaptırdığında bir sonraki poliçenizde anında %10 İNDİRİM kazanın!"
+            wp_mesaj = f"Merhaba {p_musteri},\nGrimset Studio güvencesiyle {p_plaka} plakalı aracınız için {p_tip} teklifiniz hazırlanmıştır.\n\nPiyasa Ortalaması: {piyasa_yazisi}\n*İndirimli Tutar:* {prim_yazisi}\nCebinizde kalan tutar: {avantaj_yazisi}!\n\n🎁 SİZE ÖZEL REFERANS KODUNUZ: {musteri_ozel_ref_kodu}\nBu kodu arkadaşlarınızla paylaşarak %10 İNDİRİM kazanın!"
             wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={urllib.parse.quote(wp_mesaj)}" if p_tel else f"https://wa.me/?text={urllib.parse.quote(wp_mesaj)}"
-            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp\'tan Gönder (Kod ile Beraber)</div></a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp\'tan Gönder</div></a>', unsafe_allow_html=True)
 
 elif sayfa == "🏢 Kurumsal Filo (B2B)":
-    st.title("🏢 Kurumsal Filo Yönetimi (B2B Teklif Motoru)")
+    st.title("🏢 Kurumsal Filo Yönetimi (B2B)")
     st.markdown("---")
     f_col1, f_col2 = st.columns([1, 1], gap="large")
     with f_col1:
@@ -526,8 +520,8 @@ elif sayfa == "🏢 Kurumsal Filo (B2B)":
                 toplam_filo_primi = arac_basi_fiyat * arac_sayisi
                 net_komisyon_filo = komisyon_hesapla(toplam_filo_primi, f_tip)
                 
-                st.success(f"**{arac_sayisi} Adet Araç Başarıyla Eşleştirildi!**")
-                st.info(f"Uygulanan İndirim: **%{int(indirim_orani*100)}** | Toplam Prim: **{toplam_filo_primi:,} TL**")
+                st.success(f"**{arac_sayisi} Adet Araç Eşleştirildi!**")
+                st.info(f"İndirim: **%{int(indirim_orani*100)}** | Toplam Prim: **{toplam_filo_primi:,} TL**")
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     if st.button("💾 Sisteme Kaydet", use_container_width=True, type="primary"):
@@ -539,43 +533,70 @@ elif sayfa == "🏢 Kurumsal Filo (B2B)":
                 with col_btn2:
                     st.download_button("📄 PDF İndir", data=filo_pdf_olustur(f_firma, plakalar, f_tip, toplam_filo_primi), file_name=f"Grimset_{f_firma}.pdf", mime="application/pdf", use_container_width=True)
 
-# --- YENİ MODÜL: SATIŞ HUNİSİ (KANBAN) ---
+# --- GÜNCEL MODÜL: SATIŞ HUNİSİ (KANBAN) DİNAMİK TUTARLI ---
 elif sayfa == "📌 Satış Hunisi (Kanban)":
     st.title("📌 Akıllı Satış Hunisi (Kanban Panosu)")
-    st.markdown("Müşteri adaylarınızı aşamalar arasında sürükleyerek (seçerek) takip edin. Satış kapatma oranınızı artırın!")
+    st.markdown("Müşteri adaylarınızı aşamalar arasında sürükleyerek takip edin. Satış kapatma oranınızı artırın!")
     st.markdown("---")
     
     if sh:
         try:
             ws_huni = sh.worksheet("Satış Hunisi")
             
-            # --- YENİ ADAY EKLEME FORMU ---
             with st.expander("➕ Yeni Satış Fırsatı (Aday) Ekle"):
                 with st.form("huni_form"):
                     h_isim = st.text_input("Müşteri Adı")
                     h_tel = st.text_input("Telefon")
                     h_konu = st.text_input("İlgilendiği Ürün (Kasko, TSS, Filo vs.)")
-                    h_tutar = st.text_input("Tahmini Tutar (Opsiyonel)")
+                    
+                    # YENİ: Geçmiş poliçelerden dinamik olarak tutar listesi çekme
+                    gecmis_tutarlar = ["Belirtilmemiş"]
+                    try:
+                        policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
+                        fiyatlar = set()
+                        for p in policeler:
+                            prim = str(p.get("Toplam Prim", ""))
+                            if prim and "TL" in prim:
+                                fiyatlar.add(prim)
+                        
+                        # Rakamları küçükten büyüğe sıralama fonksiyonu
+                        def parse_fiyat(f):
+                            try: return float(f.replace(" TL", "").replace(",", "").replace(".", ""))
+                            except: return 0
+                            
+                        sirali_fiyatlar = sorted(list(fiyatlar), key=parse_fiyat)
+                        gecmis_tutarlar.extend(sirali_fiyatlar)
+                    except: pass
+                    
+                    gecmis_tutarlar.append("Diğer (Manuel Gir)")
+                    
+                    h_tutar_secim = st.selectbox("Tahmini Tutar (Önceki Satışlara Göre)", gecmis_tutarlar)
+                    
+                    h_tutar_manuel = ""
+                    if h_tutar_secim == "Diğer (Manuel Gir)":
+                        h_tutar_manuel = st.text_input("Özel Tutar Girin (Örn: 25,000 TL)")
                     
                     if st.form_submit_button("Adayı Huniye Ekle"):
                         if h_isim and h_konu:
-                            zaman_id = datetime.now().strftime("%Y%m%d%H%M%S") # Benzersiz ID
+                            zaman_id = datetime.now().strftime("%Y%m%d%H%M%S")
                             tarih = datetime.now().strftime("%Y-%m-%d")
-                            ws_huni.append_row([zaman_id, tarih, h_isim, h_tel, h_konu, h_tutar, "Yeni Aday", st.session_state.kullanici_adi])
+                            
+                            # Hangi tutarı kaydedeceğimize karar veriyoruz
+                            if h_tutar_secim == "Belirtilmemiş": final_tutar = ""
+                            elif h_tutar_secim == "Diğer (Manuel Gir)": final_tutar = h_tutar_manuel
+                            else: final_tutar = h_tutar_secim
+                            
+                            ws_huni.append_row([zaman_id, tarih, h_isim, h_tel, h_konu, final_tutar, "Yeni Aday", st.session_state.kullanici_adi])
                             st.success(f"{h_isim} aday olarak eklendi!")
                             st.rerun()
                         else:
                             st.warning("Lütfen Müşteri Adı ve İlgilendiği Ürünü girin.")
             
             st.markdown("### 📊 Aktif Fırsatlar Tablosu")
-            
-            # Verileri Gspread'den çek ve başlıkları ayır
             tum_veriler = ws_huni.get_all_values()
             
             if len(tum_veriler) > 1:
-                satirlar = tum_veriler[1:] # İlk satır başlıklar
-                
-                # Streamlit Kolonlarını Oluştur
+                satirlar = tum_veriler[1:]
                 k1, k2, k3, k4 = st.columns(4)
                 
                 k1.markdown("<div style='background-color: #2980b9; padding: 10px; border-radius: 5px; text-align: center; color: white;'><b>🆕 Yeni Aday</b></div><br>", unsafe_allow_html=True)
@@ -583,20 +604,16 @@ elif sayfa == "📌 Satış Hunisi (Kanban)":
                 k3.markdown("<div style='background-color: #8e44ad; padding: 10px; border-radius: 5px; text-align: center; color: white;'><b>📄 Teklif Verildi</b></div><br>", unsafe_allow_html=True)
                 k4.markdown("<div style='background-color: #27ae60; padding: 10px; border-radius: 5px; text-align: center; color: white;'><b>🏆 Kazanıldı</b></div><br>", unsafe_allow_html=True)
                 
-                # Kayıtları aşamasına göre ilgili sütuna dağıt
                 for idx, row in enumerate(satirlar):
-                    # Olası eksik sütun hatalarını önlemek için kontrol
                     if len(row) < 8: continue
-                    
                     r_id, r_tar, r_isim, r_tel, r_konu, r_tut, r_asama, r_sorumlu = row
                     
-                    # Hangi sütuna gideceğini belirle
                     hedef_kolon = None
                     if r_asama == "Yeni Aday": hedef_kolon = k1
                     elif r_asama == "Görüşülüyor": hedef_kolon = k2
                     elif r_asama == "Teklif Verildi": hedef_kolon = k3
                     elif r_asama == "Kazanıldı": hedef_kolon = k4
-                    else: continue # 'İptal' edilenleri ekranda göstermeyebiliriz
+                    else: continue
                     
                     with hedef_kolon:
                         with st.container(border=True):
@@ -605,23 +622,14 @@ elif sayfa == "📌 Satış Hunisi (Kanban)":
                             if r_tut: st.caption(f"💰 Tutar: {r_tut}")
                             st.caption(f"💼 Sorumlu: {r_sorumlu}")
                             
-                            # Aşama Değiştirme Selectbox'ı
-                            # Selectbox değiştiğinde veritabanındaki (idx + 2) numaralı satırın 7. sütununu güncelliyoruz
                             secili_index = ["Yeni Aday", "Görüşülüyor", "Teklif Verildi", "Kazanıldı", "İptal Edildi"].index(r_asama) if r_asama in ["Yeni Aday", "Görüşülüyor", "Teklif Verildi", "Kazanıldı", "İptal Edildi"] else 0
-                            
-                            yeni_asama = st.selectbox(
-                                "Durumu Güncelle", 
-                                ["Yeni Aday", "Görüşülüyor", "Teklif Verildi", "Kazanıldı", "İptal Edildi"],
-                                index=secili_index,
-                                key=f"asama_{r_id}"
-                            )
+                            yeni_asama = st.selectbox("Durumu Güncelle", ["Yeni Aday", "Görüşülüyor", "Teklif Verildi", "Kazanıldı", "İptal Edildi"], index=secili_index, key=f"asama_{r_id}")
                             
                             if yeni_asama != r_asama:
-                                ws_huni.update_cell(idx + 2, 7, yeni_asama) # Gspread'de satırlar 1'den başlar (idx+2)
+                                ws_huni.update_cell(idx + 2, 7, yeni_asama)
                                 st.rerun()
             else:
-                st.info("Sistemde henüz takip edilen bir satış fırsatı bulunmuyor. Yukarıdan yeni aday ekleyebilirsiniz.")
-                
+                st.info("Sistemde henüz takip edilen bir satış fırsatı bulunmuyor.")
         except Exception as e:
             st.warning(f"Kanban verileri yüklenirken hata oluştu: {e}")
 
@@ -765,10 +773,8 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
             if not policeler: st.info("Veri bulunmuyor."); st.stop()
             df = pd.DataFrame(policeler)
             df['Saf Prim'] = df['Toplam Prim'].astype(str).str.replace(' TL', '').str.replace(',', '').astype(float)
-            
             if 'Net Komisyon' not in df.columns: df['Net Komisyon'] = df['Saf Prim'] * 0.10
             else: df['Net Komisyon'] = df['Net Komisyon'].astype(str).str.replace(' TL', '').str.replace(',', '').replace('', '0').astype(float)
-                
             if 'Satış Temsilcisi' not in df.columns: df['Satış Temsilcisi'] = 'Bilinmiyor'
             df['Satış Temsilcisi'] = df['Satış Temsilcisi'].replace('', 'Bilinmiyor').fillna('Bilinmiyor')
             
@@ -779,30 +785,26 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
             <div style="background: linear-gradient(90deg, #1A2980 0%, #26D0CE 100%); padding: 20px; border-radius: 10px; color: white; text-align: center; margin-bottom: 20px;">
                 <h2 style="margin:0; color: white;">💰 GRIMSET STUDIO NET KAZANÇ (KOMİSYON)</h2>
                 <h1 style="margin:0; font-size: 3rem; color: #00FF7F;">{int(toplam_komisyon):,} TL</h1>
-                <p style="margin:0; opacity: 0.8;">Bu tutar şirketinizin kasasına giren net, temiz kârdır.</p>
             </div>
             """, unsafe_allow_html=True)
             
-            st.markdown("---")
             col1, col2, col3 = st.columns(3)
-            col1.metric("💼 Toplam Kesilen Poliçe", f"{len(df)} Adet")
-            col2.metric("📈 Toplam Sigorta Hacmi (Ciro)", f"{int(toplam_ciro):,} TL")
+            col1.metric("💼 Toplam Poliçe", f"{len(df)} Adet")
+            col2.metric("📈 Toplam Üretim (Ciro)", f"{int(toplam_ciro):,} TL")
             col3.metric("🏆 En Çok Satılan", str(df['Poliçe Tipi'].mode()[0]))
             
             st.markdown("---")
-            st.subheader("🏆 Satış Ekibi Kâr Getirisi (Kim Ne Kadar Kazandırdı?)")
+            st.subheader("🏆 Satış Ekibi Liderlik Tablosu")
             satis_performansi = df.groupby('Satış Temsilcisi')['Net Komisyon'].sum().reset_index().sort_values(by='Net Komisyon', ascending=False)
             st.plotly_chart(px.bar(satis_performansi, x='Satış Temsilcisi', y='Net Komisyon', text_auto='.2s', color='Satış Temsilcisi'), use_container_width=True)
             
             st.markdown("---")
             g_col1, g_col2 = st.columns(2)
-            with g_col1:
-                st.plotly_chart(px.pie(df, names='Poliçe Tipi', values='Net Komisyon', hole=0.4, color_discrete_sequence=px.colors.sequential.Teal, title="Ürünlere Göre Net Kâr Dağılımı"), use_container_width=True)
+            with g_col1: st.plotly_chart(px.pie(df, names='Poliçe Tipi', values='Net Komisyon', hole=0.4, color_discrete_sequence=px.colors.sequential.Teal), use_container_width=True)
             with g_col2:
                 df['Kısa Tarih'] = pd.to_datetime(df['Tarih']).dt.date
-                st.plotly_chart(px.bar(df.groupby('Kısa Tarih')['Net Komisyon'].sum().reset_index(), x='Kısa Tarih', y='Net Komisyon', text_auto='.2s', color_discrete_sequence=['#4CAF50'], title="Günlük Net Kâr Akışı"), use_container_width=True)
-                
+                st.plotly_chart(px.bar(df.groupby('Kısa Tarih')['Net Komisyon'].sum().reset_index(), x='Kısa Tarih', y='Net Komisyon', text_auto='.2s', color_discrete_sequence=['#4CAF50']), use_container_width=True)
+            
             st.markdown("---")
-            st.subheader("Son Kesilen Poliçeler")
             st.dataframe(df[['Tarih', 'Satış Temsilcisi', 'Müşteri Adı', 'Poliçe Tipi', 'Toplam Prim', 'Net Komisyon']].tail(10).iloc[::-1], use_container_width=True)
         except Exception as e: st.warning(f"Hata: {e}")
