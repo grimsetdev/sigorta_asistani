@@ -3,9 +3,13 @@ import math
 import pickle
 import json
 import urllib.parse
+import smtplib # E-Posta gönderimi için
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 import streamlit as st
-import pandas as pd # Veri analizi için eklendi
-import plotly.express as px # İnteraktif grafikler için eklendi
+import pandas as pd
+import plotly.express as px
 from datetime import datetime
 from pypdf import PdfReader
 from google import genai
@@ -17,33 +21,13 @@ from google.oauth2.service_account import Credentials
 # --- Sayfa Ayarları ---
 st.set_page_config(page_title="Grimset AI | Sigorta Otomasyonu", page_icon="🛡️", layout="wide")
 
-# --- ÖZEL UI/UX CSS GİYDİRMESİ (PREMIUM GÖRÜNÜM) ---
+# --- ÖZEL UI/UX CSS GİYDİRMESİ ---
 st.markdown("""
 <style>
-    /* Buton Tasarımları */
-    .stButton>button {
-        border-radius: 8px;
-        transition: all 0.3s ease-in-out;
-        font-weight: bold;
-    }
-    .stButton>button:hover {
-        transform: scale(1.02);
-        box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
-    }
-    /* Veri Kartları (Metrikler) Tasarımı */
-    div[data-testid="metric-container"] {
-        background-color: #1e1e1e;
-        border: 1px solid #333;
-        padding: 5% 5% 5% 10%;
-        border-radius: 10px;
-        box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
-        color: white;
-    }
-    /* Sol Menü Arka Planı */
-    [data-testid="stSidebar"] {
-        background-color: #0e1117;
-        border-right: 1px solid #2d2d2d;
-    }
+    .stButton>button { border-radius: 8px; transition: all 0.3s ease-in-out; font-weight: bold; }
+    .stButton>button:hover { transform: scale(1.02); box-shadow: 0px 4px 15px rgba(0,0,0,0.1); }
+    div[data-testid="metric-container"] { background-color: #1e1e1e; border: 1px solid #333; padding: 5% 5% 5% 10%; border-radius: 10px; box-shadow: 2px 2px 10px rgba(0,0,0,0.2); color: white; }
+    [data-testid="stSidebar"] { background-color: #0e1117; border-right: 1px solid #2d2d2d; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -60,50 +44,44 @@ TEXT_MODEL = 'gemini-2.5-flash'
 HAFIZA_DOSYASI = "vektor_hafizasi.pkl"
 BELGELER_KLASORU = "belgeler"
 
-# --- GOOGLE SHEETS (CANLI CRM) BAĞLANTISI ---
+# --- GOOGLE SHEETS BAĞLANTISI ---
 @st.cache_resource
 def sheets_baglantisi_kur():
     try:
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         raw_data = st.secrets["google_json"]
         skey = json.loads(raw_data, strict=False)
-        if "\\n" in skey.get("private_key", ""):
-            skey["private_key"] = skey["private_key"].replace("\\n", "\n")
-            
+        if "\\n" in skey.get("private_key", ""): skey["private_key"] = skey["private_key"].replace("\\n", "\n")
         credentials = Credentials.from_service_account_info(skey, scopes=scopes)
         gc = gspread.authorize(credentials)
         sh = gc.open("Grimset_CRM")
         
-        try:
-            ws_musteri = sh.worksheet("Müşteri Portföyü")
+        try: ws_musteri = sh.worksheet("Müşteri Portföyü")
         except:
             ws_musteri = sh.add_worksheet(title="Müşteri Portföyü", rows="1000", cols="20")
             ws_musteri.append_row(["Tarih", "Müşteri Adı", "Telefon", "Plaka", "Vade Tarihi", "OCR Detayı"])
 
-        try:
-            ws_police = sh.worksheet("Üretilen Poliçeler")
+        try: ws_police = sh.worksheet("Üretilen Poliçeler")
         except:
             ws_police = sh.add_worksheet(title="Üretilen Poliçeler", rows="1000", cols="20")
             ws_police.append_row(["Tarih", "Müşteri Adı", "Plaka", "Poliçe Tipi", "Teminatlar", "Toplam Prim"])
             
         return sh
     except Exception as e:
-        st.error(f"Google Sheets Bağlantı Hatası. Detay: {e}")
+        st.error(f"Google Sheets Bağlantı Hatası: {e}")
         return None
 
 sh = sheets_baglantisi_kur()
 
 # --- Arka Plan Fonksiyonları ---
-def metni_vektore_cevir(metin):
-    response = client.models.embed_content(model='gemini-embedding-001', contents=metin)
-    return response.embeddings[0].values
+def metni_vektore_cevir(metin): return client.models.embed_content(model='gemini-embedding-001', contents=metin).embeddings[0].values
 
 def benzerlik_hesapla(v1, v2):
     dot_product = sum(a * b for a, b in zip(v1, v2))
-    magnitude1 = math.sqrt(sum(a * a for a in v1))
-    magnitude2 = math.sqrt(sum(a * a for a in v2))
-    if magnitude1 * magnitude2 == 0: return 0
-    return dot_product / (magnitude1 * magnitude2)
+    mag1 = math.sqrt(sum(a * a for a in v1))
+    mag2 = math.sqrt(sum(a * a for a in v2))
+    if mag1 * mag2 == 0: return 0
+    return dot_product / (mag1 * mag2)
 
 def hafizayi_olustur_ve_kaydet():
     if not os.path.exists(BELGELER_KLASORU): os.makedirs(BELGELER_KLASORU); st.stop()
@@ -152,6 +130,48 @@ def pdf_olustur(musteri, plaka, tip, teminatlar, prim):
     pdf.set_font("Arial", "B", 14)
     pdf.cell(0, 10, f"Toplam Prim: {prim}", ln=True)
     return pdf.output(dest="S").encode("latin-1")
+
+# --- YENİ: E-POSTA GÖNDERME FONKSİYONU ---
+def eposta_gonder(alici_mail, musteri_adi, plaka, tip, teminatlar, prim, pdf_bytes):
+    gonderen_mail = st.secrets.get("SMTP_EMAIL")
+    sifre = st.secrets.get("SMTP_PASSWORD")
+    
+    if not gonderen_mail or not sifre:
+        return False, "E-Posta ayarları Secrets panelinde eksik!"
+        
+    msg = MIMEMultipart()
+    msg['From'] = f"Grimset Studio <{gonderen_mail}>"
+    msg['To'] = alici_mail
+    msg['Subject'] = f"{plaka} Plakalı Aracınız İçin {tip} Teklifiniz"
+    
+    body = f"""Merhaba {musteri_adi},
+    
+Grimset Studio güvencesiyle {plaka} plakalı aracınız için hazırlanan {tip} poliçe teklifiniz ekteki PDF dosyasında sunulmuştur.
+
+Özet Teminatlarınız:
+{teminatlar}
+
+Toplam Prim: {prim}
+
+Detaylı bilgi ve onay için bize dönüş yapabilirsiniz.
+İyi çalışmalar dileriz.
+"""
+    msg.attach(MIMEText(body, 'plain', 'utf-8'))
+    
+    # PDF'i bellekteki veriden e-postaya ekle
+    part = MIMEApplication(pdf_bytes, Name=f"Grimset_Teklif_{plaka}.pdf")
+    part['Content-Disposition'] = f'attachment; filename="Grimset_Teklif_{plaka}.pdf"'
+    msg.attach(part)
+    
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(gonderen_mail, sifre)
+        server.send_message(msg)
+        server.quit()
+        return True, "Teklif E-Postası başarıyla gönderildi!"
+    except Exception as e:
+        return False, f"Gönderim hatası: {e}"
 
 db = veritabani_yukle()
 
@@ -216,7 +236,8 @@ elif sayfa == "📝 Poliçe Atölyesi":
     col1, col2 = st.columns([1, 1], gap="large")
     with col1:
         p_musteri = st.text_input("Müşteri Adı Soyadı")
-        p_tel = st.text_input("Telefon (5XX... Whatsapp için)")
+        p_tel = st.text_input("Telefon (WhatsApp için)")
+        p_mail = st.text_input("Müşteri E-Posta Adresi (Mail Gönderimi İçin)") # YENİ ALAN
         p_plaka = st.text_input("Araç Plakası")
         p_tip = st.selectbox("Poliçe Tipi", ["Kasko", "Zorunlu Trafik Sigortası", "DASK"])
         teminat_cam = st.checkbox("Sınırsız Orijinal Cam Değişimi", value=True)
@@ -242,9 +263,21 @@ elif sayfa == "📝 Poliçe Atölyesi":
         
         if p_musteri and p_plaka:
             st.markdown("---")
+            # WhatsApp Gönderim Butonu
             wp_mesaj = urllib.parse.quote(f"Merhaba {p_musteri},\nGrimset Studio güvencesiyle {p_plaka} plakalı aracınız için {p_tip} teklifiniz hazırlanmıştır.\n\n*Tutar:* {prim_yazisi}")
             wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={wp_mesaj}" if p_tel else f"https://wa.me/?text={wp_mesaj}"
-            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold;">💬 WhatsApp\'tan Gönder</div></a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp\'tan Gönder</div></a>', unsafe_allow_html=True)
+            
+            # E-Posta Gönderim Butonu (YENİ)
+            if p_mail:
+                if st.button("📧 Müşteriye E-Posta Gönder (PDF Ekli)", type="primary", use_container_width=True):
+                    with st.spinner("PDF oluşturuluyor ve mail gönderiliyor..."):
+                        pdf_verisi = pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi)
+                        basarili_mi, mesaj = eposta_gonder(p_mail, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, pdf_verisi)
+                        if basarili_mi:
+                            st.success(mesaj)
+                        else:
+                            st.error(mesaj)
 
 elif sayfa == "⚖️ Karşılaştırma":
     st.title("⚖️ Teklif Karşılaştırma Analizi")
@@ -269,27 +302,21 @@ elif sayfa == "📊 Finansal Dashboard":
                 st.info("Henüz üretilmiş poliçe verisi bulunmuyor.")
                 st.stop()
                 
-            # Veriyi Pandas DataFrame'e çevir ve temizle
             df = pd.DataFrame(policeler)
             df['Saf Prim'] = df['Toplam Prim'].astype(str).str.replace(' TL', '').str.replace(',', '').astype(float)
             toplam_ciro = df['Saf Prim'].sum()
             
-            # KPI Kartları
             col1, col2, col3 = st.columns(3)
             col1.metric("💼 Toplam Kesilen Poliçe", f"{len(df)} Adet")
             col2.metric("📈 Toplam Üretim (Ciro)", f"{int(toplam_ciro):,} TL")
             col3.metric("🏆 En Çok Satılan", str(df['Poliçe Tipi'].mode()[0]))
             
             st.markdown("---")
-            
-            # İnteraktif Grafikler
             g_col1, g_col2 = st.columns(2)
-            
             with g_col1:
                 st.subheader("Ürünlere Göre Ciro Dağılımı")
                 fig_pie = px.pie(df, names='Poliçe Tipi', values='Saf Prim', hole=0.4, color_discrete_sequence=px.colors.sequential.Teal)
                 st.plotly_chart(fig_pie, use_container_width=True)
-                
             with g_col2:
                 st.subheader("Poliçe Kesim Grafiği")
                 df['Kısa Tarih'] = pd.to_datetime(df['Tarih']).dt.date
@@ -302,4 +329,4 @@ elif sayfa == "📊 Finansal Dashboard":
             st.dataframe(df[['Tarih', 'Müşteri Adı', 'Plaka', 'Poliçe Tipi', 'Toplam Prim']].tail(10).iloc[::-1], use_container_width=True)
             
         except Exception as e:
-            st.warning(f"Dashboard yüklenirken hata oluştu: {e}. Lütfen Excel tablonuzun doğruluğunu kontrol edin.")
+            st.warning(f"Dashboard yüklenirken hata oluştu: {e}")
