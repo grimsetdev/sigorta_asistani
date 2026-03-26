@@ -119,8 +119,8 @@ if not st.session_state.giris_yapildi:
                     st.error("Hatalı kullanıcı adı veya şifre!")
                     
         with tab_musteri:
-            st.info("Poliçelerinizi görüntülemek için araç plakanızı ve sisteme kayıtlı telefon numaranızı girin.")
-            m_plaka_giris = st.text_input("Araç Plakanız (Boşluksuz)", placeholder="Örn: 34ABC123")
+            st.info("Poliçelerinizi görüntülemek için T.C. Kimlik Numaranızı (Plaka yerine) veya Araç Plakanızı ve sisteme kayıtlı telefon numaranızı girin.")
+            m_plaka_giris = st.text_input("Plaka veya T.C. Kimlik No", placeholder="Örn: 34ABC123 veya 12345678901")
             m_tel_giris = st.text_input("Sisteme Kayıtlı Telefon Numaranız", placeholder="Örn: 5551234567", type="password")
             
             if st.button("Müşteri Paneline Gir", use_container_width=True, type="primary"):
@@ -142,9 +142,9 @@ if not st.session_state.giris_yapildi:
                                 giris_basarili = True
                                 st.rerun()
                                 break
-                        if not giris_basarili: st.error("Sistemde bu plaka ve telefon numarasıyla eşleşen bir kayıt bulunamadı.")
+                        if not giris_basarili: st.error("Sistemde bu bilgi ve telefon numarasıyla eşleşen kayıt bulunamadı.")
                     except Exception as e: st.error(f"Veritabanı kontrol hatası: {e}")
-                else: st.warning("Lütfen plaka ve telefon numaranızı eksiksiz girin.")
+                else: st.warning("Lütfen bilgilerinizi eksiksiz girin.")
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
@@ -204,32 +204,28 @@ def kaza_analizi_yap(gorsel_dosyalari, plaka, isim):
         return client.models.generate_content(model=VISION_MODEL, contents=icerik_listesi).text
     except Exception as e: return f"Analiz Hatası: {e}"
 
-def teklif_karsilastir(gorsel_1, gorsel_2):
-    try: return client.models.generate_content(model=VISION_MODEL, contents=["İki teklifi kıyasla ve raporla.", Image.open(gorsel_1), Image.open(gorsel_2)]).text
-    except: return None
-
 def pdf_olustur(musteri, plaka, tip, teminatlar, prim, piyasa_fiyati=None, kazanc=None, ref_kodu=None, dil="Türkçe"):
     sozluk = {
         "Türkçe": {
-            "baslik": "GRIMSET STUDIO - POLICE TEKLIFI", "musteri": "Musteri", "plaka": "Arac Plakasi", "tip": "Police Tipi",
-            "teminatlar": "Secili Teminatlar:", "grimset_fiyat": "Grimset Ozel Primi:", "piyasa_fiyat": "Piyasa Ortalamasi:",
+            "baslik": "GRIMSET STUDIO - POLICE TEKLIFI", "musteri": "Musteri", "plaka": "Arac Plakasi / T.C. No", "tip": "Police Tipi",
+            "teminatlar": "Secili Teminatlar & Ozet:", "grimset_fiyat": "Grimset Ozel Primi:", "piyasa_fiyat": "Piyasa Ortalamasi:",
             "kazanc": "Sizin Kazanciniz:", "ref_baslik": "Size Ozel Kazandiran Paylasim Kodunuz!",
             "ref_metin": "Bu kodu arkadaslarinizla paylasin. Arkadaslariniz bu kodla aninda %5 indirim kazanirken, siz de bir sonraki police yenilemenizde %10 indirim kazanin!"
         },
         "English": {
-            "baslik": "GRIMSET STUDIO - INSURANCE QUOTE", "musteri": "Customer", "plaka": "License Plate", "tip": "Policy Type",
-            "teminatlar": "Selected Coverages:", "grimset_fiyat": "Grimset Special Premium:", "piyasa_fiyat": "Market Average:",
+            "baslik": "GRIMSET STUDIO - INSURANCE QUOTE", "musteri": "Customer", "plaka": "License Plate / ID", "tip": "Policy Type",
+            "teminatlar": "Selected Coverages & Summary:", "grimset_fiyat": "Grimset Special Premium:", "piyasa_fiyat": "Market Average:",
             "kazanc": "Your Total Savings:", "ref_baslik": "Your Exclusive Affiliate Code!",
             "ref_metin": "Share this code with friends. They get a 5% instant discount, and you get a 10% discount on your next renewal!"
         },
         "Deutsch": {
-            "baslik": "GRIMSET STUDIO - VERSICHERUNGSANGEBOT", "musteri": "Kunde", "plaka": "Kennzeichen", "tip": "Versicherungsart",
+            "baslik": "GRIMSET STUDIO - VERSICHERUNGSANGEBOT", "musteri": "Kunde", "plaka": "Kennzeichen / ID", "tip": "Versicherungsart",
             "teminatlar": "Gewaehlter Schutz:", "grimset_fiyat": "Grimset Spezialpraemie:", "piyasa_fiyat": "Marktdurchschnitt:",
             "kazanc": "Ihre Ersparnis:", "ref_baslik": "Ihr exklusiver Empfehlungscode!",
             "ref_metin": "Teilen Sie diesen Code. Freunde erhalten 5% Rabatt, und Sie erhalten 10% Rabatt auf Ihre naechste Verlaengerung!"
         },
         "Français": {
-            "baslik": "GRIMSET STUDIO - DEVIS D'ASSURANCE", "musteri": "Client", "plaka": "Plaque", "tip": "Type de Police",
+            "baslik": "GRIMSET STUDIO - DEVIS D'ASSURANCE", "musteri": "Client", "plaka": "Plaque / ID", "tip": "Type de Police",
             "teminatlar": "Garanties Choisies:", "grimset_fiyat": "Prime Speciale Grimset:", "piyasa_fiyat": "Moyenne du Marche:",
             "kazanc": "Vos Economies:", "ref_baslik": "Votre Code de Parrainage Exclusif!",
             "ref_metin": "Partagez ce code. Vos amis obtiennent 5% de reduction, et vous obtenez 10% sur votre prochain renouvellement!"
@@ -238,9 +234,9 @@ def pdf_olustur(musteri, plaka, tip, teminatlar, prim, piyasa_fiyati=None, kazan
     d = sozluk.get(dil, sozluk["Türkçe"])
     
     tip_cevirileri = {
-        "English": {"Kasko": "Comprehensive Insurance", "Zorunlu Trafik Sigortası": "Compulsory Traffic Insurance", "DASK": "Earthquake Insurance (DASK)"},
-        "Deutsch": {"Kasko": "Vollkaskoversicherung", "Zorunlu Trafik Sigortası": "Kfz-Haftpflicht", "DASK": "Erdbebenversicherung"},
-        "Français": {"Kasko": "Assurance Tous Risques", "Zorunlu Trafik Sigortası": "Assurance au Tiers", "DASK": "Assurance Tremblement de Terre"}
+        "English": {"Kasko": "Comprehensive Insurance", "Zorunlu Trafik Sigortası": "Compulsory Traffic Insurance", "DASK": "Earthquake Insurance", "Tamamlayıcı Sağlık Sigortası (TSS)": "Supplementary Health Insurance", "Özel Sağlık Sigortası (ÖSS)": "Private Health Insurance"},
+        "Deutsch": {"Kasko": "Vollkaskoversicherung", "Zorunlu Trafik Sigortası": "Kfz-Haftpflicht", "DASK": "Erdbebenversicherung", "Tamamlayıcı Sağlık Sigortası (TSS)": "Zusatzkrankenversicherung", "Özel Sağlık Sigortası (ÖSS)": "Private Krankenversicherung"},
+        "Français": {"Kasko": "Assurance Tous Risques", "Zorunlu Trafik Sigortası": "Assurance au Tiers", "DASK": "Assurance Tremblement de Terre", "Tamamlayıcı Sağlık Sigortası (TSS)": "Complémentaire Santé", "Özel Sağlık Sigortası (ÖSS)": "Assurance Santé Privée"}
     }
     if dil != "Türkçe" and tip in tip_cevirileri[dil]: tip = tip_cevirileri[dil][tip]
 
@@ -257,7 +253,8 @@ def pdf_olustur(musteri, plaka, tip, teminatlar, prim, piyasa_fiyati=None, kazan
     pdf.ln(5)
     pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 10, d["teminatlar"], ln=True)
-    pdf.multi_cell(0, 10, teminatlar.translate(tr_map))
+    pdf.set_font("Arial", "", 10)
+    pdf.multi_cell(0, 8, teminatlar.translate(tr_map))
     pdf.ln(10)
     
     pdf.set_font("Arial", "B", 14)
@@ -315,17 +312,17 @@ def eposta_gonder(alici_mail, musteri_adi, plaka, tip, teminatlar, prim, pdf_byt
     if not gonderen_mail or not sifre: return False, "E-Posta ayarları eksik!"
     
     konular = {
-        "Türkçe": f"{plaka} Plakalı Aracınız İçin {tip} Teklifiniz",
-        "English": f"Your {tip} Quote for License Plate {plaka}",
-        "Deutsch": f"Ihr {tip} Angebot für Kennzeichen {plaka}",
-        "Français": f"Votre devis {tip} pour la plaque {plaka}"
+        "Türkçe": f"{plaka} Poliçe / Teklifiniz",
+        "English": f"Your {tip} Quote for {plaka}",
+        "Deutsch": f"Ihr {tip} Angebot für {plaka}",
+        "Français": f"Votre devis {tip} pour {plaka}"
     }
     
     mesajlar = {
-        "Türkçe": f"Merhaba {musteri_adi},\n\nGrimset Studio güvencesiyle {plaka} plakalı aracınız için hazırlanan {tip} teklifiniz ektedir.\n\nToplam Prim: {prim}\n\nİyi çalışmalar dileriz.",
-        "English": f"Hello {musteri_adi},\n\nYour {tip} quote for vehicle {plaka} by Grimset Studio is attached.\n\nTotal Premium: {prim}\n\nBest regards.",
-        "Deutsch": f"Hallo {musteri_adi},\n\nIhr {tip} Angebot für das Fahrzeug {plaka} von Grimset Studio ist beigefügt.\n\nGesamtprämie: {prim}\n\nMit freundlichen Grüßen.",
-        "Français": f"Bonjour {musteri_adi},\n\nVotre devis {tip} pour le véhicule {plaka} par Grimset Studio est en pièce jointe.\n\nPrime Totale: {prim}\n\nCordialement."
+        "Türkçe": f"Merhaba {musteri_adi},\n\nGrimset Studio güvencesiyle {plaka} için hazırlanan {tip} teklifiniz ektedir.\n\nToplam Prim: {prim}\n\nİyi çalışmalar dileriz.",
+        "English": f"Hello {musteri_adi},\n\nYour {tip} quote for {plaka} by Grimset Studio is attached.\n\nTotal Premium: {prim}\n\nBest regards.",
+        "Deutsch": f"Hallo {musteri_adi},\n\nIhr {tip} Angebot für {plaka} von Grimset Studio ist beigefügt.\n\nGesamtprämie: {prim}\n\nMit freundlichen Grüßen.",
+        "Français": f"Bonjour {musteri_adi},\n\nVotre devis {tip} pour {plaka} par Grimset Studio est en pièce jointe.\n\nPrime Totale: {prim}\n\nCordialement."
     }
     
     msg = MIMEMultipart()
@@ -346,7 +343,8 @@ def eposta_gonder(alici_mail, musteri_adi, plaka, tip, teminatlar, prim, pdf_byt
     except Exception as e: return False, f"Gönderim hatası: {e}"
 
 def komisyon_hesapla(prim_tutari, police_tipi):
-    if police_tipi in ["Kasko", "Filo Kasko", "DASK"]: oran = 0.15
+    # Sağlık Sigortaları genellikle yüksek komisyonludur
+    if police_tipi in ["Kasko", "Filo Kasko", "DASK", "Tamamlayıcı Sağlık Sigortası (TSS)", "Özel Sağlık Sigortası (ÖSS)"]: oran = 0.15
     elif police_tipi in ["Zorunlu Trafik Sigortası", "Filo Zorunlu Trafik Sigortası"]: oran = 0.08
     else: oran = 0.10
     return int(prim_tutari * oran)
@@ -363,7 +361,8 @@ st.sidebar.markdown("---")
 
 if st.session_state.rol in ["Admin", "Satis"]:
     st.sidebar.title("Modüller")
-    menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏢 Kurumsal Filo (B2B)", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı", "⚖️ Karşılaştırma"]
+    # YENİ: Sağlık Sigortası Modülü Eklendi
+    menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏥 Sağlık (TSS/ÖSS)", "🏢 Kurumsal Filo (B2B)", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı"]
     if st.session_state.rol == "Admin":
         menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "🕵️‍♂️ AI Müşteri Profilleme", "📊 Finansal Dashboard"])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
@@ -378,13 +377,13 @@ st.sidebar.caption("Grimset Studio © 2026")
 # ----------------- MÜŞTERİ PORTALI SAYFALARI -----------------
 if sayfa == "🏠 Poliçelerim" and st.session_state.rol == "Musteri":
     st.title(f"👋 Hoş Geldiniz, {st.session_state.kullanici_adi}")
-    st.markdown(f"**{st.session_state.musteri_plaka}** plakalı aracınıza ait poliçe kayıtları aşağıdadır.")
+    st.markdown(f"**{st.session_state.musteri_plaka}** T.C. / Plaka bilgisine ait poliçe kayıtları aşağıdadır.")
     st.markdown("---")
     if sh:
         try:
             policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
             benim_policelerim = [p for p in policeler if str(p.get("Plaka", "")).replace(" ", "").upper() == st.session_state.musteri_plaka]
-            if not benim_policelerim: st.info("Sistemde aracınıza ait kesilmiş poliçe bulunmamaktadır.")
+            if not benim_policelerim: st.info("Sistemde tarafınıza ait kesilmiş poliçe bulunmamaktadır.")
             else:
                 for p in benim_policelerim:
                     with st.container():
@@ -440,7 +439,7 @@ elif sayfa == "📋 Kayıt & Ayıklama":
         with st.form("crm_form"):
             m_adi = st.text_input("Ad Soyad")
             m_tel = st.text_input("Telefon (5XX...)")
-            m_plaka = st.text_input("Plaka")
+            m_plaka = st.text_input("Plaka veya T.C. Kimlik No")
             m_vade = st.date_input("Poliçe Bitiş (Vade) Tarihi")
             if st.form_submit_button("Google Sheets'e Kaydet"):
                 if m_adi and m_plaka and sh:
@@ -451,7 +450,7 @@ elif sayfa == "📋 Kayıt & Ayıklama":
                         st.success("Müşteri portföye eklendi!")
                         st.session_state.son_ocr = None
                     except Exception as e: st.error(f"Hata: {e}")
-                else: st.warning("Ad ve Plaka zorunludur.")
+                else: st.warning("Ad ve Plaka/T.C. zorunludur.")
     
     with sag_panel:
         st.subheader("🤖 Mevzuat Asistanı")
@@ -476,7 +475,7 @@ elif sayfa == "📋 Kayıt & Ayıklama":
                     st.session_state.mesajlar.append({"rol": "assistant", "icerik": response.text})
 
 elif sayfa == "📝 Poliçe Atölyesi":
-    st.title("📝 Poliçe Atölyesi (Perakende & Global)")
+    st.title("📝 Poliçe Atölyesi (Perakende Oto/Dask)")
     st.markdown("---")
     
     secilen_dil = st.radio("🌍 Müşteri İletişim Dili (PDF ve Mesaj Şablonu)", ["Türkçe", "English", "Deutsch", "Français"], horizontal=True)
@@ -487,7 +486,7 @@ elif sayfa == "📝 Poliçe Atölyesi":
         p_musteri = st.text_input("Müşteri Adı Soyadı")
         p_tel = st.text_input("Telefon (WhatsApp için)")
         p_mail = st.text_input("Müşteri E-Posta Adresi")
-        p_plaka = st.text_input("Araç Plakası")
+        p_plaka = st.text_input("Araç Plakası veya Adres Kodu (DASK)")
         p_tip = st.selectbox("Poliçe Tipi", ["Kasko", "Zorunlu Trafik Sigortası", "DASK"])
         teminat_cam = st.checkbox("Sınırsız Orijinal Cam Değişimi", value=True)
         teminat_ikame = st.selectbox("İkame Araç Süresi", ["Yılda 2 Kez, 15 Gün", "Yılda 2 Kez, 7 Gün", "İkame Araç Yok"])
@@ -498,6 +497,7 @@ elif sayfa == "📝 Poliçe Atölyesi":
         
     with col2:
         tahmini_prim = 15000 + (5000 if p_tip=="Kasko" else 0) + (1200 if teminat_cam else 0) + (3000 if teminat_imm=="Sınırsız" else 0)
+        if p_tip == "DASK": tahmini_prim = 1200
         
         if kullanilan_ref:
             ref_indirim = int(tahmini_prim * 0.05)
@@ -533,6 +533,13 @@ elif sayfa == "📝 Poliçe Atölyesi":
         if kullanilan_ref: teminat_ozeti += f"\n- Ref: {kullanilan_ref}"
         
         st.markdown("---")
+        if st.button("💡 Yapay Zeka Satış Tüyosu Üret"):
+            with st.spinner("Gemini satış stratejisi kurguluyor..."):
+                prompt = f"Sen elit satış koçusun. Müşteri '{p_tip}' poliçesi alıyor. Plakası: {p_plaka}. Bu müşteriye gelirini artırmak için hangi ek ürünü satmalıyız? İkna edici 2 cümle öner."
+                try: st.success(client.models.generate_content(model=TEXT_MODEL, contents=prompt).text)
+                except: st.error("Asistan yanıt veremiyor.")
+        st.markdown("---")
+        
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
             if st.button("💾 Google Sheets'e Kaydet", use_container_width=True):
@@ -561,14 +568,130 @@ elif sayfa == "📝 Poliçe Atölyesi":
                 
             wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={urllib.parse.quote(wp_mesaj)}" if p_tel else f"https://wa.me/?text={urllib.parse.quote(wp_mesaj)}"
             st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp Gönder ({secilen_dil})</div></a>', unsafe_allow_html=True)
-            
-            if p_mail:
-                if st.button("📧 E-Posta Gönder (" + secilen_dil + ")", type="primary", use_container_width=True):
-                    with st.spinner("Mail gönderiliyor..."):
-                        pdf_data = pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, piyasa_yazisi, avantaj_yazisi, musteri_ozel_ref_kodu, dil=secilen_dil)
-                        basarili_mi, mesaj = eposta_gonder(p_mail, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, pdf_data, dil=secilen_dil)
-                        if basarili_mi: st.success(mesaj)
-                        else: st.error(mesaj)
+
+# --- YENİ MODÜL: SAĞLIK SİGORTASI (TSS/ÖSS) ---
+elif sayfa == "🏥 Sağlık (TSS/ÖSS)":
+    st.title("🏥 Sağlık Sigortası Yapay Zeka Fiyatlama Robotu")
+    st.markdown("Müşterinin fiziksel ve mesleki risk profilini çıkararak nokta atışı Tamamlayıcı (TSS) veya Özel (ÖSS) Sağlık Sigortası teklifi sunun.")
+    st.markdown("---")
+    
+    s_col1, s_col2 = st.columns([1, 1.2], gap="large")
+    
+    with s_col1:
+        s_musteri = st.text_input("Müşteri Adı Soyadı")
+        s_tc_tel = st.text_input("T.C. Kimlik No (Sistem Kaydı İçin)", placeholder="Örn: 12345678901")
+        s_tel = st.text_input("Telefon Numarası")
+        
+        st.markdown("### 📋 Profil Bilgileri")
+        s_yas = st.slider("Yaş", min_value=18, max_value=80, value=30)
+        c_boy, c_kilo = st.columns(2)
+        s_boy = c_boy.number_input("Boy (cm)", min_value=140, max_value=220, value=175)
+        s_kilo = c_kilo.number_input("Kilo (kg)", min_value=40, max_value=150, value=75)
+        
+        s_meslek = st.selectbox("Meslek / Çalışma Koşulu", ["Masa Başı / Ofis", "Sürekli Ayakta / Satış", "Ağır Sanayi / İnşaat", "Şoför / Lojistik", "Sağlık Çalışanı", "Çalışmıyor / Emekli"])
+        s_hastalik = st.text_area("Mevcut/Geçmiş Hastalıklar (Varsa)", placeholder="Örn: Bel fıtığı, Hipertansiyon, Astım vb. Yoksa boş bırakın.")
+        
+        s_tip = st.radio("İstenen Poliçe Tipi", ["Tamamlayıcı Sağlık Sigortası (TSS)", "Özel Sağlık Sigortası (ÖSS)"], horizontal=True)
+
+    with s_col2:
+        # Vücut Kitle İndeksi (VKİ) Hesaplama
+        vki = 0
+        if s_boy > 0:
+            boy_m = s_boy / 100
+            vki = round(s_kilo / (boy_m * boy_m), 1)
+        
+        vki_durum = "Normal"
+        if vki < 18.5: vki_durum = "Zayıf"
+        elif vki > 25 and vki < 30: vki_durum = "Fazla Kilolu"
+        elif vki >= 30: vki_durum = "Obez (Riskli)"
+        
+        st.info(f"⚖️ **Vücut Kitle İndeksi (VKİ): {vki} ({vki_durum})**")
+        
+        # Fiyat Hesaplama Algoritması
+        taban_fiyat = 8000 if s_tip == "Tamamlayıcı Sağlık Sigortası (TSS)" else 25000
+        yas_ek_primi = (s_yas - 18) * (150 if s_tip == "Tamamlayıcı Sağlık Sigortası (TSS)" else 400)
+        vki_ek_primi = 3000 if vki >= 30 else 0
+        hastalik_ek_primi = 5000 if len(s_hastalik) > 3 else 0
+        
+        toplam_saglik_primi = taban_fiyat + yas_ek_primi + vki_ek_primi + hastalik_ek_primi
+        net_saglik_komisyonu = komisyon_hesapla(toplam_saglik_primi, s_tip)
+        
+        st.markdown(f"### 💰 Hesaplanan Toplam Prim: **{toplam_saglik_primi:,} TL**")
+        
+        # Yapay Zeka Risk Analizi Butonu
+        if st.button("🧠 AI Risk Analizi Yap & Teminat Öner", type="primary", use_container_width=True):
+            if s_musteri:
+                with st.spinner("Gemini aktüeryal risk analizi yapıyor..."):
+                    prompt = f"""Sen Grimset Studio'nun elit sağlık sigortası aktüerisin. Müşteri yaşı: {s_yas}, Boy: {s_boy}cm, Kilo: {s_kilo}kg (VKİ: {vki} - {vki_durum}), Meslek: {s_meslek}, Mevcut Hastalıklar: {s_hastalik if s_hastalik else 'Yok'}. 
+Müşteriye {s_tip} poliçesi sunacağız. 
+Lütfen şunları raporla:
+1. **Risk Analizi:** Fiziksel ve mesleki durumuna göre olası sağlık riskleri nelerdir?
+2. **Özel Teminat Önerisi:** Poliçeye hangi ek teminatlar (fizik tedavi, check-up, göz, diş vb.) kesinlikle eklenmeli?
+3. **Satış Kapanış Cümlesi:** Satış temsilcisi (Ali) bu müşteriye telefonda tam olarak ne diyerek bu poliçeyi satmalı? (Çarpıcı ve ikna edici 2 cümle)"""
+                    try:
+                        analiz_sonucu = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                        st.session_state.saglik_analizi = analiz_sonucu
+                    except Exception as e: st.error("AI bağlantı hatası.")
+            else:
+                st.warning("Lütfen Müşteri Adını girin.")
+                
+        if "saglik_analizi" in st.session_state:
+            with st.container(border=True):
+                st.markdown("#### 🔬 Yapay Zeka Profil ve Satış Analizi")
+                st.write(st.session_state.saglik_analizi)
+        
+        st.markdown("---")
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("💾 Google Sheets'e Kaydet", use_container_width=True):
+                if s_musteri and s_tc_tel and sh:
+                    try:
+                        zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        ai_ozet = st.session_state.saglik_analizi if "saglik_analizi" in st.session_state else "Standart Teminatlar"
+                        
+                        sh.worksheet("Üretilen Poliçeler").append_row([zaman, s_musteri, s_tc_tel, s_tip, "Yapay Zeka Özel Sağlık Analizi Eklidir", f"{toplam_saglik_primi:,} TL", st.session_state.kullanici_adi, f"{net_saglik_komisyonu:,} TL"])
+                        try: sh.worksheet("Müşteri Portföyü").append_row([zaman, s_musteri, s_tel, s_tc_tel, "", f"Sağlık Profili: VKİ {vki}, Yaş {s_yas}"])
+                        except: pass
+                        st.success("Sağlık poliçesi sisteme işlendi!")
+                    except Exception as e: st.error(f"Hata: {e}")
+                else: st.warning("Müşteri Adı ve T.C. No girilmelidir.")
+        
+        with col_btn2:
+            if s_musteri and s_tc_tel:
+                ai_teminat_ozeti = f"Musteri Yasi: {s_yas}\nVucut Kitle Indeksi: {vki}\nMeslek Grubu: {s_meslek}\n\n* AI Tarafindan Belirlenen Ozel Kapsam onerileri ve Risk analizleri sisteme islenmistir."
+                st.download_button("📄 PDF Teklif İndir", data=pdf_olustur(s_musteri, s_tc_tel, s_tip, ai_teminat_ozeti, f"{toplam_saglik_primi:,} TL"), file_name=f"Grimset_Saglik_{s_musteri.replace(' ','_')}.pdf", mime="application/pdf", use_container_width=True)
+
+elif sayfa == "🏢 Kurumsal Filo (B2B)":
+    st.title("🏢 Kurumsal Filo Yönetimi (B2B)")
+    st.markdown("---")
+    f_col1, f_col2 = st.columns([1, 1], gap="large")
+    with f_col1:
+        f_firma = st.text_input("Kurumsal Firma Adı")
+        f_tip = st.selectbox("Filo Sigorta Tipi", ["Filo Kasko", "Filo Zorunlu Trafik Sigortası"])
+        girilen_plakalar = st_tags(label='**Araç Plakalarını Girin**', text='Plakayı yazıp Enter tuşuna basın', value=[], suggestions=['34ABC123', '06DEF456'], key='filo_plakalar')
+    with f_col2:
+        if f_firma and girilen_plakalar:
+            plakalar = [p.strip().upper() for p in girilen_plakalar if p.strip()]
+            arac_sayisi = len(plakalar)
+            if arac_sayisi > 0:
+                taban_fiyat = 20000 if f_tip == "Filo Kasko" else 8000
+                indirim_orani = min(arac_sayisi * 0.02, 0.30)
+                arac_basi_fiyat = int(taban_fiyat * (1 - indirim_orani))
+                toplam_filo_primi = arac_basi_fiyat * arac_sayisi
+                net_komisyon_filo = komisyon_hesapla(toplam_filo_primi, f_tip)
+                
+                st.success(f"**{arac_sayisi} Adet Araç Eşleştirildi!**")
+                st.info(f"İndirim: **%{int(indirim_orani*100)}** | Toplam Prim: **{toplam_filo_primi:,} TL**")
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("💾 Sisteme Kaydet", use_container_width=True, type="primary"):
+                        if sh:
+                            try:
+                                sh.worksheet("Filo Teklifleri").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f_firma, arac_sayisi, ", ".join(plakalar), f_tip, f"{toplam_filo_primi:,} TL", st.session_state.kullanici_adi, f"{net_komisyon_filo:,} TL"])
+                                st.success("B2B Filo teklifi kaydedildi!")
+                            except Exception as e: st.error(f"Kayıt Hatası: {e}")
+                with col_btn2:
+                    st.download_button("📄 PDF İndir", data=filo_pdf_olustur(f_firma, plakalar, f_tip, toplam_filo_primi), file_name=f"Grimset_{f_firma}.pdf", mime="application/pdf", use_container_width=True)
 
 elif sayfa == "📌 Satış Hunisi (Kanban)":
     st.title("📌 Akıllı Satış Hunisi (Kanban Panosu)")
@@ -630,38 +753,6 @@ elif sayfa == "📌 Satış Hunisi (Kanban)":
             else: st.info("Takip edilen fırsat yok.")
         except Exception as e: st.warning(f"Hata: {e}")
 
-elif sayfa == "🏢 Kurumsal Filo (B2B)":
-    st.title("🏢 Kurumsal Filo Yönetimi (B2B)")
-    st.markdown("---")
-    f_col1, f_col2 = st.columns([1, 1], gap="large")
-    with f_col1:
-        f_firma = st.text_input("Kurumsal Firma Adı")
-        f_tip = st.selectbox("Filo Sigorta Tipi", ["Filo Kasko", "Filo Zorunlu Trafik Sigortası"])
-        girilen_plakalar = st_tags(label='**Araç Plakalarını Girin**', text='Plakayı yazıp Enter tuşuna basın', value=[], suggestions=['34ABC123', '06DEF456'], key='filo_plakalar')
-    with f_col2:
-        if f_firma and girilen_plakalar:
-            plakalar = [p.strip().upper() for p in girilen_plakalar if p.strip()]
-            arac_sayisi = len(plakalar)
-            if arac_sayisi > 0:
-                taban_fiyat = 20000 if f_tip == "Filo Kasko" else 8000
-                indirim_orani = min(arac_sayisi * 0.02, 0.30)
-                arac_basi_fiyat = int(taban_fiyat * (1 - indirim_orani))
-                toplam_filo_primi = arac_basi_fiyat * arac_sayisi
-                net_komisyon_filo = komisyon_hesapla(toplam_filo_primi, f_tip)
-                
-                st.success(f"**{arac_sayisi} Adet Araç Eşleştirildi!**")
-                st.info(f"İndirim: **%{int(indirim_orani*100)}** | Toplam Prim: **{toplam_filo_primi:,} TL**")
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if st.button("💾 Sisteme Kaydet", use_container_width=True, type="primary"):
-                        if sh:
-                            try:
-                                sh.worksheet("Filo Teklifleri").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f_firma, arac_sayisi, ", ".join(plakalar), f_tip, f"{toplam_filo_primi:,} TL", st.session_state.kullanici_adi, f"{net_komisyon_filo:,} TL"])
-                                st.success("B2B Filo teklifi kaydedildi!")
-                            except Exception as e: st.error(f"Kayıt Hatası: {e}")
-                with col_btn2:
-                    st.download_button("📄 PDF İndir", data=filo_pdf_olustur(f_firma, plakalar, f_tip, toplam_filo_primi), file_name=f"Grimset_{f_firma}.pdf", mime="application/pdf", use_container_width=True)
-
 elif sayfa == "🚗 Hasar Asistanı":
     st.title("🚗 Kaza ve Hasar Destek Asistanı")
     st.markdown("---")
@@ -687,18 +778,6 @@ elif sayfa == "🚗 Hasar Asistanı":
                     sh.worksheet("Hasar Kayıtları").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), h_isim, h_plaka, st.session_state.son_kaza_analizi])
                     st.success("Kaydedildi!")
                 except Exception as e: st.error(f"Hata: {e}")
-
-elif sayfa == "⚖️ Karşılaştırma":
-    st.title("⚖️ Teklif Karşılaştırma Analizi")
-    col1, col2 = st.columns(2)
-    with col1:
-        t1 = st.file_uploader("1. Teklif", type=["jpg", "png"], key="t1")
-        if t1: st.image(t1)
-    with col2:
-        t2 = st.file_uploader("2. Teklif", type=["jpg", "png"], key="t2")
-        if t2: st.image(t2)
-    if t1 and t2:
-        if st.button("Kıyasla"): st.markdown(teklif_karsilastir(t1, t2))
 
 elif sayfa == "⏰ Vade & Yenileme" and st.session_state.rol == "Admin":
     st.title("⏰ Akıllı Vade & Yenileme Panosu")
@@ -816,29 +895,26 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
             <div style="background: linear-gradient(90deg, #1A2980 0%, #26D0CE 100%); padding: 20px; border-radius: 10px; color: white; text-align: center; margin-bottom: 20px;">
                 <h2 style="margin:0; color: white;">💰 GRIMSET STUDIO NET KAZANÇ (KOMİSYON)</h2>
                 <h1 style="margin:0; font-size: 3rem; color: #00FF7F;">{int(toplam_komisyon):,} TL</h1>
-                <p style="margin:0; opacity: 0.8;">Bu tutar şirketinizin kasasına giren net, temiz kârdır.</p>
             </div>
             """, unsafe_allow_html=True)
             
             col1, col2, col3 = st.columns(3)
             col1.metric("💼 Toplam Kesilen Poliçe", f"{len(df)} Adet")
-            col2.metric("📈 Toplam Sigorta Hacmi (Ciro)", f"{int(toplam_ciro):,} TL")
+            col2.metric("📈 Toplam Üretim (Ciro)", f"{int(toplam_ciro):,} TL")
             col3.metric("🏆 En Çok Satılan", str(df['Poliçe Tipi'].mode()[0]))
             
             st.markdown("---")
-            st.subheader("🏆 Satış Ekibi Kâr Getirisi (Kim Ne Kadar Kazandırdı?)")
+            st.subheader("🏆 Satış Ekibi Liderlik Tablosu")
             satis_performansi = df.groupby('Satış Temsilcisi')['Net Komisyon'].sum().reset_index().sort_values(by='Net Komisyon', ascending=False)
             st.plotly_chart(px.bar(satis_performansi, x='Satış Temsilcisi', y='Net Komisyon', text_auto='.2s', color='Satış Temsilcisi'), use_container_width=True)
             
             st.markdown("---")
             g_col1, g_col2 = st.columns(2)
-            with g_col1:
-                st.plotly_chart(px.pie(df, names='Poliçe Tipi', values='Net Komisyon', hole=0.4, color_discrete_sequence=px.colors.sequential.Teal, title="Ürünlere Göre Net Kâr Dağılımı"), use_container_width=True)
+            with g_col1: st.plotly_chart(px.pie(df, names='Poliçe Tipi', values='Net Komisyon', hole=0.4, color_discrete_sequence=px.colors.sequential.Teal), use_container_width=True)
             with g_col2:
                 df['Kısa Tarih'] = pd.to_datetime(df['Tarih']).dt.date
-                st.plotly_chart(px.bar(df.groupby('Kısa Tarih')['Net Komisyon'].sum().reset_index(), x='Kısa Tarih', y='Net Komisyon', text_auto='.2s', color_discrete_sequence=['#4CAF50'], title="Günlük Net Kâr Akışı"), use_container_width=True)
-                
+                st.plotly_chart(px.bar(df.groupby('Kısa Tarih')['Net Komisyon'].sum().reset_index(), x='Kısa Tarih', y='Net Komisyon', text_auto='.2s', color_discrete_sequence=['#4CAF50']), use_container_width=True)
+            
             st.markdown("---")
-            st.subheader("Son Kesilen Poliçeler")
             st.dataframe(df[['Tarih', 'Satış Temsilcisi', 'Müşteri Adı', 'Poliçe Tipi', 'Toplam Prim', 'Net Komisyon']].tail(10).iloc[::-1], use_container_width=True)
         except Exception as e: st.warning(f"Hata: {e}")
