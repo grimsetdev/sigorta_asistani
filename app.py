@@ -78,7 +78,6 @@ def sheets_baglantisi_kur():
         except:
             ws_huni = sh.add_worksheet(title="Satış Hunisi", rows="1000", cols="20")
             ws_huni.append_row(["ID", "Tarih", "Müşteri Adı", "Telefon", "Konu", "Tahmini Tutar", "Aşama", "Sorumlu"])
-        # YENİ: Şirket Giderleri Sekmesi
         try: ws_gider = sh.worksheet("Şirket Giderleri")
         except:
             ws_gider = sh.add_worksheet(title="Şirket Giderleri", rows="1000", cols="20")
@@ -220,7 +219,7 @@ def kvkk_pdf_olustur(musteri_adi, tckn_plaka):
     pdf.cell(0, 10, "KVKK AYDINLATMA VE ACIK RIZA METNI", ln=True, align="C")
     pdf.ln(10)
     pdf.set_font("Arial", "", 10)
-    metin = f"""Sayin {musteri_adi} (TC/Plaka: {tckn_plaka}),\n\nGrimset Studio olarak, kisisel verilerinizin guvenligi ve gizliligi bizim icin onceliklidir. 6698 sayili Kisisel Verilerin Korunmasi Kanunu (KVKK) kapsaminda, sigorta tekliflerinin hazirlanmasi, police uretim surecleri, risk analizi ve hasar danismanligi hizmetlerinin sunulabilmesi amaciyla paylasmis oldugunuz kisisel verileriniz (kimlik, iletisim, arac, saglik bilgileri vb.) sirketimiz tarafindan veri sorumlusu sifatiyla islenmektedir.\n\nVerileriniz, yalnizca sigortacilik faaliyetlerinin yurutulmesi amaciyla anlasmali oldugumuz sigorta sirketleri, acenteler, eksperler und yasal zorunluluklar kapsaminda yetkili kamu kurum ve kuruluslari ile paylasilabilecektir.\n\nIsbu aydinlatma metnini okudugunuzu; kisisel verilerinizin Grimset Studio tarafindan islenmesine, saklanmasina ve belirtilen amaclar dogrultusunda yurt ici/yurt disi aktarilmasina ozgur iradenizle 'Acik Riza' verdiginizi kabul, beyan ve taahhut edersiniz.\n\nTarih: {datetime.now().strftime("%d.%m.%Y")}\n\n* Bu belge dijital ortamda olusturulmustur. Tarafimiza iletisim kanallarindan (SMS, E-Posta, WhatsApp) vereceginiz 'ONAYLIYORUM' yaniti, islak imza hukmunde sayilacaktir."""
+    metin = f"""Sayin {musteri_adi} (TC/Plaka: {tckn_plaka}),\n\nGrimset Studio olarak, kisisel verilerinizin guvenligi ve gizliligi bizim icin onceliklidir. 6698 sayili Kisisel Verilerin Korunmasi Kanunu (KVKK) kapsaminda, sigorta tekliflerinin hazirlanmasi, police uretim surecleri, risk analizi ve hasar danismanligi hizmetlerinin sunulabilmesi amaciyla paylasmis oldugunuz kisisel verileriniz sirketimiz tarafindan veri sorumlusu sifatiyla islenmektedir.\n\nVerileriniz, yalnizca sigortacilik faaliyetlerinin yurutulmesi amaciyla anlasmali oldugumuz sigorta sirketleri, acenteler, eksperler ve yasal zorunluluklar kapsaminda yetkili kamu kurum ve kuruluslari ile paylasilabilecektir.\n\nIsbu aydinlatma metnini okudugunuzu; kisisel verilerinizin Grimset Studio tarafindan islenmesine, saklanmasina ve belirtilen amaclar dogrultusunda yurt ici/yurt disi aktarilmasina ozgur iradenizle 'Acik Riza' verdiginizi kabul, beyan ve taahhut edersiniz.\n\nTarih: {datetime.now().strftime("%d.%m.%Y")}\n\n* Bu belge dijital ortamda olusturulmustur. Tarafimiza iletisim kanallarindan (SMS, E-Posta, WhatsApp) vereceginiz 'ONAYLIYORUM' yaniti, islak imza hukmunde sayilacaktir."""
     pdf.multi_cell(0, 7, metin.translate(tr_map))
     pdf.ln(15)
     pdf.set_font("Arial", "I", 9)
@@ -340,7 +339,6 @@ def eposta_gonder(alici_mail, musteri_adi, plaka, tip, teminatlar, prim, pdf_byt
         "Deutsch": f"Ihr {tip} Angebot für {plaka}",
         "Français": f"Votre devis {tip} pour {plaka}"
     }
-    
     mesajlar = {
         "Türkçe": f"Merhaba {musteri_adi},\n\nGrimset Studio güvencesiyle {plaka} için hazırlanan {tip} teklifiniz ektedir.\n\nToplam Prim: {prim}\n\nİyi çalışmalar dileriz.",
         "English": f"Hello {musteri_adi},\n\nYour {tip} quote for {plaka} by Grimset Studio is attached.\n\nTotal Premium: {prim}\n\nBest regards.",
@@ -387,7 +385,6 @@ st.sidebar.markdown("---")
 
 if st.session_state.rol in ["Admin", "Satis"]:
     st.sidebar.title("Modüller")
-    # YENİ: "💸 Gider Yönetimi" eklendi
     menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏥 Sağlık (TSS/ÖSS)", "🏢 Kurumsal Filo (B2B)", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı & Süreç Yönetimi", "⚖️ Karşılaştırma"]
     if st.session_state.rol == "Admin":
         menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "🕵️‍♂️ AI Müşteri Profilleme", "💸 Gider Yönetimi", "📊 Finansal Dashboard"])
@@ -462,7 +459,6 @@ elif sayfa == "🚗 Hasar Bildir & Takip Et" and st.session_state.rol == "Muster
 # ----------------- PERSONEL/ADMİN SAYFALARI -----------------
 elif sayfa == "📋 Kayıt & Ayıklama":
     sol_panel, sag_panel = st.columns([1, 2], gap="large")
-    
     if "son_kayit_isim" not in st.session_state: st.session_state.son_kayit_isim = None
     if "son_kayit_plaka" not in st.session_state: st.session_state.son_kayit_plaka = None
     if "son_kayit_tel" not in st.session_state: st.session_state.son_kayit_tel = None
@@ -545,6 +541,7 @@ elif sayfa == "📝 Poliçe Atölyesi":
     st.markdown("---")
     secilen_dil = st.radio("🌍 Müşteri İletişim Dili (PDF ve Mesaj Şablonu)", ["Türkçe", "English", "Deutsch", "Français"], horizontal=True)
     st.markdown("---")
+    
     col1, col2 = st.columns([1, 1], gap="large")
     with col1:
         p_musteri = st.text_input("Müşteri Adı Soyadı")
@@ -841,8 +838,10 @@ elif sayfa == "🚗 Hasar Asistanı & Süreç Yönetimi":
                                 ws_hasar.update_cell(gercek_idx + 1, 5, yeni_durum)
                                 st.success("Durum güncellendi! Müşteri portalına yansıdı.")
                                 st.rerun()
-            else: st.info("Sistemde açık hasar dosyası bulunmuyor.")
-        except Exception as e: st.warning(f"Hata: {e}")
+            else:
+                st.info("Sistemde açık hasar dosyası bulunmuyor.")
+        except Exception as e:
+            st.warning(f"Hasar dosyaları çekilirken bir hata oluştu: {e}")
 
 elif sayfa == "⚖️ Karşılaştırma":
     st.title("⚖️ Teklif Karşılaştırma Analizi")
@@ -949,21 +948,16 @@ elif sayfa == "🕵️‍♂️ AI Müşteri Profilleme" and st.session_state.ro
                             except Exception as e: st.error(f"Hata: {e}")
         except Exception as e: st.warning(f"Hata: {e}")
 
-# YENİ MODÜL: GİDER YÖNETİMİ
 elif sayfa == "💸 Gider Yönetimi" and st.session_state.rol == "Admin":
     st.title("💸 Şirket Gider Yönetimi")
-    st.markdown("Aylık ofis masraflarını, maaşları ve pazarlama bütçelerini buraya girerek gerçek saf kârınızı hesaplayın.")
     st.markdown("---")
-    
     g_col1, g_col2 = st.columns([1, 1.5], gap="large")
-    
     with g_col1:
         st.subheader("➕ Yeni Gider Ekle")
         with st.form("gider_form"):
-            g_kalem = st.text_input("Gider Adı/Açıklaması (Örn: Ofis Kirası, Ali Maaş)")
-            g_kategori = st.selectbox("Kategori", ["Kira & Aidat", "Personel Maaş/Prim", "Pazarlama & Reklam", "Ofis İçi Harcama", "Faturalar (İnternet, Elektrik vs.)", "Diğer"])
+            g_kalem = st.text_input("Gider Adı/Açıklaması")
+            g_kategori = st.selectbox("Kategori", ["Kira & Aidat", "Personel Maaş/Prim", "Pazarlama & Reklam", "Ofis İçi Harcama", "Faturalar", "Diğer"])
             g_tutar = st.number_input("Tutar (TL)", min_value=0)
-            
             if st.form_submit_button("Gideri Kaydet"):
                 if g_kalem and g_tutar > 0 and sh:
                     try:
@@ -972,41 +966,35 @@ elif sayfa == "💸 Gider Yönetimi" and st.session_state.rol == "Admin":
                         st.success("Gider başarıyla işlendi!")
                         st.rerun()
                     except Exception as e: st.error(f"Kayıt Hatası: {e}")
-                else:
-                    st.warning("Lütfen geçerli bir açıklama ve tutar girin.")
-                    
+                else: st.warning("Açıklama ve tutar girin.")
     with g_col2:
         st.subheader("📋 Mevcut Şirket Giderleri")
         if sh:
             try:
                 giderler = sh.worksheet("Şirket Giderleri").get_all_records()
-                if not giderler:
-                    st.info("Sistemde henüz kaydedilmiş bir gider bulunmuyor.")
-                else:
-                    df_gider = pd.DataFrame(giderler)
-                    st.dataframe(df_gider.iloc[::-1], use_container_width=True) # Ters çevirip son eklenenleri üste aldık
-            except Exception as e:
-                st.warning("Giderler yüklenemedi.")
+                if not giderler: st.info("Kaydedilmiş gider bulunmuyor.")
+                else: st.dataframe(pd.DataFrame(giderler).iloc[::-1], use_container_width=True)
+            except Exception as e: st.warning("Giderler yüklenemedi.")
 
 elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
     st.title("📊 Yönetici Finansal Dashboard (Kâr/Zarar Merkezi)")
     st.markdown("---")
     if sh:
         try:
-            # 1. KAZANÇLARI HESAPLA (Üretilen Poliçeler)
             policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
             if not policeler: st.info("Veri bulunmuyor."); st.stop()
             df = pd.DataFrame(policeler)
             df['Saf Prim'] = df['Toplam Prim'].astype(str).str.replace(' TL', '').str.replace(',', '').astype(float)
+            
             if 'Net Komisyon' not in df.columns: df['Net Komisyon'] = df['Saf Prim'] * 0.10
             else: df['Net Komisyon'] = df['Net Komisyon'].astype(str).str.replace(' TL', '').str.replace(',', '').replace('', '0').astype(float)
+                
             if 'Satış Temsilcisi' not in df.columns: df['Satış Temsilcisi'] = 'Bilinmiyor'
             df['Satış Temsilcisi'] = df['Satış Temsilcisi'].replace('', 'Bilinmiyor').fillna('Bilinmiyor')
             
             toplam_ciro = df['Saf Prim'].sum()
             toplam_komisyon = df['Net Komisyon'].sum()
             
-            # 2. GİDERLERİ HESAPLA (Şirket Giderleri)
             toplam_gider = 0
             try:
                 giderler = sh.worksheet("Şirket Giderleri").get_all_records()
@@ -1015,11 +1003,8 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
                     toplam_gider = df_gider['Tutar'].astype(str).str.replace(' TL', '').str.replace(',', '').astype(float).sum()
             except: pass
             
-            # 3. SAF KÂRI BUL
             saf_kar = toplam_komisyon - toplam_gider
-            
-            # 4. PATRON EKRANI (BÜYÜK PANO)
-            renk = "#00FF7F" if saf_kar >= 0 else "#FF4500" # Kârda yeşil, zararda kırmızı
+            renk = "#00FF7F" if saf_kar >= 0 else "#FF4500"
             durum_metni = "Bu tutar tüm masraflar çıktıktan sonra şirketinizin kasasında kalan net nakit kârdır." if saf_kar >= 0 else "Dikkat! Giderleriniz komisyon gelirlerinizi aşmış durumda."
             
             st.markdown(f"""
@@ -1034,6 +1019,38 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
             </div>
             """, unsafe_allow_html=True)
             
+            # --- YENİ EKLENEN KISIM: 🧠 AI SATIŞ KOÇU ---
+            st.markdown("---")
+            st.subheader("🧠 AI Satış & Performans Koçu (Kanban Analizi)")
+            if st.button("Satış Ekibini ve Bekleyen Fırsatları Analiz Et", type="primary"):
+                with st.spinner("Gemini Kanban panosunu inceliyor... Lütfen bekleyin."):
+                    try:
+                        huni_verileri = sh.worksheet("Satış Hunisi").get_all_records()
+                        aktif_firsatlar = [f for f in huni_verileri if f.get('Aşama') not in ['Kazanıldı', 'İptal Edildi']]
+                        
+                        if not aktif_firsatlar:
+                            st.success("Şu an bekleyen aktif bir satış fırsatı yok. Ekip harika çalışıyor!")
+                        else:
+                            firsat_ozeti = ""
+                            toplam_bekleyen_tutar = 0
+                            for f in aktif_firsatlar:
+                                tutar_str = str(f.get('Tahmini Tutar', '0')).replace(' TL', '').replace(',', '').replace('.', '')
+                                try: tutar = float(tutar_str) if tutar_str else 0
+                                except: tutar = 0
+                                toplam_bekleyen_tutar += tutar
+                                firsat_ozeti += f"- Müşteri: {f.get('Müşteri Adı')}, Aşama: {f.get('Aşama')}, Tutar: {tutar} TL, Sorumlu: {f.get('Sorumlu')}, Eklenme: {f.get('Tarih')}\n"
+                            
+                            prompt = f"""Sen Grimset Studio'nun sert ama motive edici Satış Müdürüsün. Aşağıda Kanban panosunda bekleyen (Kazanıldı ya da İptal olmayan) açık müşteri fırsatları var. Masada bekleyen potansiyel ciro: {toplam_bekleyen_tutar} TL.
+Lütfen personelin performansını analiz et. Sorumlu kişilere (örneğin Ali'ye) ne yapmaları gerektiği konusunda kısa, net ve otoriter bir aksiyon planı çıkar. Hangi müşterilere acil dönülmesi gerektiğini isim vererek vurgula.
+Bekleyen İşler:
+{firsat_ozeti}"""
+                            analiz_sonucu = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                            st.info(analiz_sonucu)
+                    except Exception as e:
+                        st.error(f"Kanban verileri analiz edilirken hata oluştu: {e}")
+            # --- AI KOÇ SONU ---
+            
+            st.markdown("---")
             col1, col2, col3 = st.columns(3)
             col1.metric("💼 Toplam Kesilen Poliçe", f"{len(df)} Adet")
             col2.metric("📈 Toplam Üretim (Ciro)", f"{int(toplam_ciro):,} TL")
