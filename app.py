@@ -64,7 +64,8 @@ def sheets_baglantisi_kur():
         try: ws_police = sh.worksheet("Üretilen Poliçeler")
         except:
             ws_police = sh.add_worksheet(title="Üretilen Poliçeler", rows="1000", cols="20")
-            ws_police.append_row(["Tarih", "Müşteri Adı", "Plaka", "Poliçe Tipi", "Teminatlar", "Toplam Prim", "Satış Temsilcisi"])
+            # YENİ: Net Komisyon Sütunu
+            ws_police.append_row(["Tarih", "Müşteri Adı", "Plaka", "Poliçe Tipi", "Teminatlar", "Toplam Prim", "Satış Temsilcisi", "Net Komisyon"])
         try: ws_hasar = sh.worksheet("Hasar Kayıtları")
         except:
             ws_hasar = sh.add_worksheet(title="Hasar Kayıtları", rows="1000", cols="20")
@@ -72,7 +73,7 @@ def sheets_baglantisi_kur():
         try: ws_filo = sh.worksheet("Filo Teklifleri")
         except:
             ws_filo = sh.add_worksheet(title="Filo Teklifleri", rows="1000", cols="20")
-            ws_filo.append_row(["Tarih", "Firma Adı", "Araç Sayısı", "Plakalar", "Poliçe Tipi", "Toplam Prim", "Satış Temsilcisi"])
+            ws_filo.append_row(["Tarih", "Firma Adı", "Araç Sayısı", "Plakalar", "Poliçe Tipi", "Toplam Prim", "Satış Temsilcisi", "Net Komisyon"])
         return sh
     except Exception as e:
         st.error(f"Google Sheets Bağlantı Hatası: {e}")
@@ -204,7 +205,6 @@ def teklif_karsilastir(gorsel_1, gorsel_2):
     try: return client.models.generate_content(model=VISION_MODEL, contents=["İki teklifi kıyasla ve raporla.", Image.open(gorsel_1), Image.open(gorsel_2)]).text
     except: return None
 
-# GÜNCELLEME: PDF fonksiyonuna Referans Kodu eklendi
 def pdf_olustur(musteri, plaka, tip, teminatlar, prim, piyasa_fiyati=None, kazanc=None, ref_kodu=None):
     pdf = FPDF()
     pdf.add_page()
@@ -235,14 +235,13 @@ def pdf_olustur(musteri, plaka, tip, teminatlar, prim, piyasa_fiyati=None, kazan
         pdf.cell(0, 10, f"Sizin Kazanciniz: {kazanc}", ln=True)
         pdf.set_text_color(0, 0, 0)
         
-    # YENİ: PDF Altında Referans Sistemi Görseli
     if ref_kodu:
         pdf.ln(15)
         pdf.set_fill_color(240, 240, 240)
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 10, "Size Ozel Kazandiran Paylasim Kodunuz!", ln=True, fill=True)
         pdf.set_font("Arial", "B", 14)
-        pdf.set_text_color(255, 69, 0) # Turuncu
+        pdf.set_text_color(255, 69, 0)
         pdf.cell(0, 10, f"KOD: {ref_kodu}", ln=True)
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", "", 10)
@@ -293,6 +292,18 @@ def eposta_gonder(alici_mail, musteri_adi, plaka, tip, teminatlar, prim, pdf_byt
         server.quit()
         return True, "Teklif E-Postası başarıyla gönderildi!"
     except Exception as e: return False, f"Gönderim hatası: {e}"
+
+# YENİ: Komisyon Hesaplama Aracı
+def komisyon_hesapla(prim_tutari, police_tipi):
+    if police_tipi == "Kasko" or police_tipi == "Filo Kasko":
+        oran = 0.15 # Kasko %15
+    elif police_tipi == "Zorunlu Trafik Sigortası" or police_tipi == "Filo Zorunlu Trafik Sigortası":
+        oran = 0.08 # Trafik %8
+    elif police_tipi == "DASK":
+        oran = 0.15 # DASK %15
+    else:
+        oran = 0.10 # Diğer %10
+    return int(prim_tutari * oran)
 
 db = veritabani_yukle()
 
@@ -432,7 +443,6 @@ elif sayfa == "📝 Poliçe Atölyesi":
         teminat_ikame = st.selectbox("İkame Araç Süresi", ["Yılda 2 Kez, 15 Gün", "Yılda 2 Kez, 7 Gün", "İkame Araç Yok"])
         teminat_imm = st.select_slider("İMM Limiti", options=["1.000.000 TL", "5.000.000 TL", "Sınırsız"], value="5.000.000 TL")
         
-        # YENİ: Referans Kodu Giriş Alanı
         st.markdown("---")
         st.markdown("### 🎁 Referans (Affiliate) İndirimi")
         kullanilan_ref = st.text_input("Müşteri bir tanıdığının kodunu getirdi mi?", placeholder="Örn: MEHMET-123 (Opsiyonel)")
@@ -440,7 +450,6 @@ elif sayfa == "📝 Poliçe Atölyesi":
     with col2:
         tahmini_prim = 15000 + (5000 if p_tip=="Kasko" else 0) + (1200 if teminat_cam else 0) + (3000 if teminat_imm=="Sınırsız" else 0)
         
-        # Referans indirimi hesaplama (%5)
         if kullanilan_ref:
             ref_indirim = int(tahmini_prim * 0.05)
             tahmini_prim -= ref_indirim
@@ -449,11 +458,14 @@ elif sayfa == "📝 Poliçe Atölyesi":
         piyasa_primi = int(tahmini_prim * 1.18)
         avantaj_tutari = piyasa_primi - tahmini_prim
         
+        # NET KOMİSYON HESAPLAMASI (GİZLİ)
+        net_komisyon_tutari = komisyon_hesapla(tahmini_prim, p_tip)
+        
         prim_yazisi = f"{tahmini_prim:,} TL"
         piyasa_yazisi = f"{piyasa_primi:,} TL"
         avantaj_yazisi = f"{avantaj_tutari:,} TL"
+        net_komisyon_yazisi = f"{net_komisyon_tutari:,} TL"
         
-        # Müşteriye Özel Referans Kodu Üretimi (İsmin ilk kelimesi + Plakanın son 3 hanesi)
         musteri_ozel_ref_kodu = ""
         if p_musteri and p_plaka:
             ilk_isim = p_musteri.split()[0].upper().replace(" ", "")
@@ -467,8 +479,7 @@ elif sayfa == "📝 Poliçe Atölyesi":
         st.caption(f"*(Piyasa Ortalama Fiyatı: {piyasa_yazisi})*")
         
         teminat_ozeti = f"- Cam: {'Sınırsız' if teminat_cam else 'Muafiyetli'}\n- İkame: {teminat_ikame}\n- İMM: {teminat_imm}"
-        if kullanilan_ref:
-            teminat_ozeti += f"\n- Kullanılan Referans: {kullanilan_ref}"
+        if kullanilan_ref: teminat_ozeti += f"\n- Kullanılan Referans: {kullanilan_ref}"
         
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
@@ -476,7 +487,8 @@ elif sayfa == "📝 Poliçe Atölyesi":
                 if p_musteri and p_plaka and sh:
                     try:
                         zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi])
+                        # YENİ: Gizli Net Komisyon Sütunu da kaydediliyor
+                        sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi, net_komisyon_yazisi])
                         try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_plaka, "", "Poliçe Atölyesinden Eklendi"])
                         except: pass
                         st.success("Poliçe kesildi ve portföye işlendi!")
@@ -484,12 +496,6 @@ elif sayfa == "📝 Poliçe Atölyesi":
         with col_btn2:
             if p_musteri and p_plaka:
                 st.download_button("📄 PDF İndir", data=pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, piyasa_yazisi, avantaj_yazisi, musteri_ozel_ref_kodu), file_name=f"Teklif_{p_plaka}.pdf", mime="application/pdf", use_container_width=True)
-        
-        if p_musteri and p_plaka:
-            st.markdown("---")
-            wp_mesaj = f"Merhaba {p_musteri},\nGrimset Studio güvencesiyle {p_plaka} plakalı aracınız için {p_tip} teklifiniz hazırlanmıştır.\n\nPiyasa Ortalaması: {piyasa_yazisi}\n*İndirimli Tutar:* {prim_yazisi}\nBu poliçeyle cebinizde kalan tutar: {avantaj_yazisi}!\n\n🎁 SİZE ÖZEL REFERANS KODUNUZ: {musteri_ozel_ref_kodu}\nBu kodu arkadaşlarınızla paylaşın, onlar bizden sigorta yaptırdığında bir sonraki poliçenizde anında %10 İNDİRİM kazanın!"
-            wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={urllib.parse.quote(wp_mesaj)}" if p_tel else f"https://wa.me/?text={urllib.parse.quote(wp_mesaj)}"
-            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp\'tan Gönder (Kod ile Beraber)</div></a>', unsafe_allow_html=True)
 
 elif sayfa == "🏢 Kurumsal Filo (B2B)":
     st.title("🏢 Kurumsal Filo Yönetimi (B2B Teklif Motoru)")
@@ -508,6 +514,10 @@ elif sayfa == "🏢 Kurumsal Filo (B2B)":
                 indirim_orani = min(arac_sayisi * 0.02, 0.30)
                 arac_basi_fiyat = int(taban_fiyat * (1 - indirim_orani))
                 toplam_filo_primi = arac_basi_fiyat * arac_sayisi
+                
+                # NET KOMİSYON HESAPLAMASI (FİLO)
+                net_komisyon_filo = komisyon_hesapla(toplam_filo_primi, f_tip)
+                
                 st.success(f"**{arac_sayisi} Adet Araç Başarıyla Eşleştirildi!**")
                 st.info(f"Uygulanan İndirim: **%{int(indirim_orani*100)}** | Toplam Prim: **{toplam_filo_primi:,} TL**")
                 col_btn1, col_btn2 = st.columns(2)
@@ -515,7 +525,7 @@ elif sayfa == "🏢 Kurumsal Filo (B2B)":
                     if st.button("💾 Sisteme Kaydet", use_container_width=True, type="primary"):
                         if sh:
                             try:
-                                sh.worksheet("Filo Teklifleri").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f_firma, arac_sayisi, ", ".join(plakalar), f_tip, f"{toplam_filo_primi:,} TL", st.session_state.kullanici_adi])
+                                sh.worksheet("Filo Teklifleri").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f_firma, arac_sayisi, ", ".join(plakalar), f_tip, f"{toplam_filo_primi:,} TL", st.session_state.kullanici_adi, f"{net_komisyon_filo:,} TL"])
                                 st.success("B2B Filo teklifi kaydedildi!")
                             except Exception as e: st.error(f"Kayıt Hatası: {e}")
                 with col_btn2:
@@ -611,6 +621,8 @@ elif sayfa == "🎯 Kampanya Motoru" and st.session_state.rol == "Admin":
                     if not df_filtrelenmis.empty:
                         varsayilan_mesaj = f"Merhaba {{isim}} Bey/Hanım,\nGrimset Studio olarak {{plaka}} plakalı aracınıza kestiğimiz {hedef_urun} poliçeniz dolayısıyla size özel indirim tanımlanmıştır."
                         kampanya_metni = st.text_area("Mesaj Metni", value=varsayilan_mesaj, height=150)
+                        st.markdown("---")
+                        st.subheader("3. Gönderimi Başlat")
                         for index, row in df_filtrelenmis.iterrows():
                             isim = str(row.get('Müşteri Adı', 'Müşterimiz'))
                             plaka = str(row.get('Plaka', 'Aracınız'))
@@ -650,8 +662,9 @@ elif sayfa == "🕵️‍♂️ AI Müşteri Profilleme" and st.session_state.ro
                             except Exception as e: st.error(f"Hata: {e}")
         except Exception as e: st.warning(f"Hata: {e}")
 
+# YENİ: FİNANSAL DASHBOARD'A KOMİSYON METRİKLERİ EKLENDİ
 elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
-    st.title("📊 Yönetici Finansal Dashboard")
+    st.title("📊 Yönetici Finansal Dashboard (Kâr/Zarar Merkezi)")
     st.markdown("---")
     if sh:
         try:
@@ -659,29 +672,47 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
             if not policeler: st.info("Veri bulunmuyor."); st.stop()
             df = pd.DataFrame(policeler)
             df['Saf Prim'] = df['Toplam Prim'].astype(str).str.replace(' TL', '').str.replace(',', '').astype(float)
+            
+            # Eski verilerde Komisyon sütunu yoksa varsayılan hesapla (hata vermemesi için)
+            if 'Net Komisyon' not in df.columns:
+                df['Net Komisyon'] = df['Saf Prim'] * 0.10
+            else:
+                df['Net Komisyon'] = df['Net Komisyon'].astype(str).str.replace(' TL', '').str.replace(',', '').replace('', '0').astype(float)
+                
             if 'Satış Temsilcisi' not in df.columns: df['Satış Temsilcisi'] = 'Bilinmiyor'
             df['Satış Temsilcisi'] = df['Satış Temsilcisi'].replace('', 'Bilinmiyor').fillna('Bilinmiyor')
             
             toplam_ciro = df['Saf Prim'].sum()
+            toplam_komisyon = df['Net Komisyon'].sum()
             
-            st.subheader("🏆 Satış Ekibi Liderlik Tablosu")
-            satis_performansi = df.groupby('Satış Temsilcisi')['Saf Prim'].sum().reset_index().sort_values(by='Saf Prim', ascending=False)
-            st.plotly_chart(px.bar(satis_performansi, x='Satış Temsilcisi', y='Saf Prim', text_auto='.2s', color='Satış Temsilcisi'), use_container_width=True)
+            st.markdown(f"""
+            <div style="background: linear-gradient(90deg, #1A2980 0%, #26D0CE 100%); padding: 20px; border-radius: 10px; color: white; text-align: center; margin-bottom: 20px;">
+                <h2 style="margin:0; color: white;">💰 GRIMSET STUDIO NET KAZANÇ (KOMİSYON)</h2>
+                <h1 style="margin:0; font-size: 3rem; color: #00FF7F;">{int(toplam_komisyon):,} TL</h1>
+                <p style="margin:0; opacity: 0.8;">Bu tutar şirketinizin kasasına giren net, temiz kârdır.</p>
+            </div>
+            """, unsafe_allow_html=True)
             
             st.markdown("---")
             col1, col2, col3 = st.columns(3)
             col1.metric("💼 Toplam Kesilen Poliçe", f"{len(df)} Adet")
-            col2.metric("📈 Toplam Üretim (Ciro)", f"{int(toplam_ciro):,} TL")
+            col2.metric("📈 Toplam Sigorta Hacmi (Ciro)", f"{int(toplam_ciro):,} TL")
             col3.metric("🏆 En Çok Satılan", str(df['Poliçe Tipi'].mode()[0]))
+            
+            st.markdown("---")
+            st.subheader("🏆 Satış Ekibi Kâr Getirisi (Kim Ne Kadar Kazandırdı?)")
+            satis_performansi = df.groupby('Satış Temsilcisi')['Net Komisyon'].sum().reset_index().sort_values(by='Net Komisyon', ascending=False)
+            st.plotly_chart(px.bar(satis_performansi, x='Satış Temsilcisi', y='Net Komisyon', text_auto='.2s', color='Satış Temsilcisi'), use_container_width=True)
             
             st.markdown("---")
             g_col1, g_col2 = st.columns(2)
             with g_col1:
-                st.plotly_chart(px.pie(df, names='Poliçe Tipi', values='Saf Prim', hole=0.4, color_discrete_sequence=px.colors.sequential.Teal), use_container_width=True)
+                st.plotly_chart(px.pie(df, names='Poliçe Tipi', values='Net Komisyon', hole=0.4, color_discrete_sequence=px.colors.sequential.Teal, title="Ürünlere Göre Net Kâr Dağılımı"), use_container_width=True)
             with g_col2:
                 df['Kısa Tarih'] = pd.to_datetime(df['Tarih']).dt.date
-                st.plotly_chart(px.bar(df.groupby('Kısa Tarih')['Saf Prim'].sum().reset_index(), x='Kısa Tarih', y='Saf Prim', text_auto='.2s', color_discrete_sequence=['#4CAF50']), use_container_width=True)
+                st.plotly_chart(px.bar(df.groupby('Kısa Tarih')['Net Komisyon'].sum().reset_index(), x='Kısa Tarih', y='Net Komisyon', text_auto='.2s', color_discrete_sequence=['#4CAF50'], title="Günlük Net Kâr Akışı"), use_container_width=True)
                 
             st.markdown("---")
-            st.dataframe(df[['Tarih', 'Satış Temsilcisi', 'Müşteri Adı', 'Poliçe Tipi', 'Toplam Prim']].tail(10).iloc[::-1], use_container_width=True)
+            st.subheader("Son Kesilen Poliçeler")
+            st.dataframe(df[['Tarih', 'Satış Temsilcisi', 'Müşteri Adı', 'Poliçe Tipi', 'Toplam Prim', 'Net Komisyon']].tail(10).iloc[::-1], use_container_width=True)
         except Exception as e: st.warning(f"Hata: {e}")
