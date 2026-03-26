@@ -64,7 +64,7 @@ if not st.session_state.giris_yapildi:
             else:
                 st.error("Hatalı kullanıcı adı veya şifre!")
         st.markdown('</div>', unsafe_allow_html=True)
-    st.stop() # Giriş yapılmadıysa kodun geri kalanını çalıştırmayı durdurur
+    st.stop()
 
 # --- API VE GÜVENLİK AYARLARI ---
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
@@ -97,6 +97,11 @@ def sheets_baglantisi_kur():
         except:
             ws_police = sh.add_worksheet(title="Üretilen Poliçeler", rows="1000", cols="20")
             ws_police.append_row(["Tarih", "Müşteri Adı", "Plaka", "Poliçe Tipi", "Teminatlar", "Toplam Prim"])
+        # YENİ: Hasar Kayıtları Sekmesi
+        try: ws_hasar = sh.worksheet("Hasar Kayıtları")
+        except:
+            ws_hasar = sh.add_worksheet(title="Hasar Kayıtları", rows="1000", cols="20")
+            ws_hasar.append_row(["Tarih", "Müşteri Adı", "Plaka", "Hasar Raporu"])
         return sh
     except Exception as e:
         st.error(f"Google Sheets Bağlantı Hatası: {e}")
@@ -134,7 +139,7 @@ def veritabani_yukle():
     return hafizayi_olustur_ve_kaydet()
 
 def coklu_belge_oku(gorsel_dosyalari):
-    prompt = """Sen analitik bir OCR asistanısın. Sana gönderilen tüm belgeleri (Kimlik, Ruhsat, Eski Poliçe vb.) aynı anda analiz et. 
+    prompt = """Sen analitik bir OCR asistanısın. Sana gönderilen tüm belgeleri analiz et. 
 Belgelerdeki bilgileri harmanlayarak SADECE aşağıdaki alanları tek bir temiz liste halinde ver. Okunamayan verileri boş bırak:
 - Müşteri Adı Soyadı:
 - T.C. Kimlik No:
@@ -149,6 +154,19 @@ Asla yorum yapma."""
         for dosya in gorsel_dosyalari: icerik_listesi.append(Image.open(dosya))
         return client.models.generate_content(model=VISION_MODEL, contents=icerik_listesi).text
     except Exception as e: return f"Görsel İşleme Hatası: {e}"
+
+# YENİ: KAZA VE HASAR ANALİZ FONKSİYONU
+def kaza_analizi_yap(gorsel_dosyalari, plaka, isim):
+    prompt = f"""Sen Grimset Studio'nun uzman sigorta hasar danışmanı ve eksperisin. Müşterimiz {isim}'e ait {plaka} plakalı aracın kaza görselleri (ve varsa tutanak fotoğrafları) ektedir.
+Lütfen profesyonel bir dille şunları raporla:
+1. GÖRÜNÜR HASAR ANALİZİ: Araçta veya karşı araçta hangi parçalarda hasar mevcut? (Tampon, far, kaporta ezilmesi vb. detaylıca incele).
+2. KUSUR TAHMİNİ: Görsellerden anlaşıldığı kadarıyla kaza nasıl olmuş olabilir? Kusur durumu tahmini nedir?
+3. HASAR BEYAN DİLEKÇESİ: Sigorta şirketinin hasar departmanına sunulmak üzere, resmi bir dille yazılmış, olayı özetleyen ve hasar talebinde bulunan kısa bir beyan dilekçesi taslağı oluştur."""
+    try:
+        icerik_listesi = [prompt]
+        for dosya in gorsel_dosyalari: icerik_listesi.append(Image.open(dosya))
+        return client.models.generate_content(model=VISION_MODEL, contents=icerik_listesi).text
+    except Exception as e: return f"Analiz Hatası: {e}"
 
 def teklif_karsilastir(gorsel_1, gorsel_2):
     try: return client.models.generate_content(model=VISION_MODEL, contents=["İki teklifi kıyasla ve raporla.", Image.open(gorsel_1), Image.open(gorsel_2)]).text
@@ -207,8 +225,7 @@ if st.sidebar.button("🚪 Çıkış Yap", use_container_width=True):
 st.sidebar.markdown("---")
 st.sidebar.title("Modüller")
 
-# Rol bazlı menü seçeneklerini belirle
-menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "⚖️ Karşılaştırma"]
+menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🚗 Hasar Asistanı", "⚖️ Karşılaştırma"]
 if st.session_state.rol == "Admin":
     menu_secenekleri.extend(["⏰ Vade & Yenileme", "📊 Finansal Dashboard"])
 
@@ -302,12 +319,12 @@ elif sayfa == "📝 Poliçe Atölyesi":
         st.subheader("🧠 AI Çapraz Satış (Cross-Sell) Asistanı")
         if st.button("💡 Müşteriye Özel Satış Tüyosu Üret"):
             with st.spinner("Gemini satış stratejisi kurguluyor..."):
-                prompt = f"""Sen Grimset Studio'nun elit sigorta satış koçusun. Müşteri şu an '{p_tip}' poliçesi alıyor. Plakası: {p_plaka}. Teminatları: {teminat_ozeti}. 
+                prompt = f"""Sen Grimset Studio'nun elit sigorta satış koçusun. Müşteri '{p_tip}' poliçesi alıyor. Plakası: {p_plaka}. Teminatları: {teminat_ozeti}. 
                 Bu müşteriye gelirini artırmak için hangi ek sigorta ürününü (TSS, DASK, Konut vb.) satmalıyız? Satış temsilcisine 2-3 cümlelik harika, vurucu ve ikna edici bir cümle öner."""
                 try:
                     cevap = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
                     st.success(cevap)
-                except Exception as e: st.error("Asistan şu an yanıt veremiyor.")
+                except Exception as e: st.error("Asistan yanıt veremiyor.")
         st.markdown("---")
         
         col_btn1, col_btn2 = st.columns(2)
@@ -333,6 +350,45 @@ elif sayfa == "📝 Poliçe Atölyesi":
                         basarili_mi, mesaj = eposta_gonder(p_mail, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi))
                         if basarili_mi: st.success(mesaj)
                         else: st.error(mesaj)
+
+# --- YENİ MODÜL: HASAR ASİSTANI ---
+elif sayfa == "🚗 Hasar Asistanı":
+    st.title("🚗 Kaza ve Hasar Destek Asistanı")
+    st.markdown("Müşterinin kaza anında gönderdiği fotoğrafları ve tutanağı yükleyin, sistem hasar analizi yapsın ve resmi beyan dilekçesini yazsın.")
+    st.markdown("---")
+    
+    h_col1, h_col2 = st.columns([1, 2], gap="large")
+    with h_col1:
+        h_isim = st.text_input("Müşteri Adı Soyadı")
+        h_plaka = st.text_input("Araç Plakası")
+        h_gorseller = st.file_uploader("Kaza ve Tutanak Fotoğrafları Yükle", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+        
+        if h_gorseller:
+            gorsel_sutunlari = st.columns(min(len(h_gorseller), 3))
+            for idx, img in enumerate(h_gorseller[:3]):
+                gorsel_sutunlari[idx].image(img, use_container_width=True)
+                
+        if st.button("🔍 Kaza Raporunu ve Hasarı Analiz Et", type="primary", use_container_width=True):
+            if h_isim and h_plaka and h_gorseller:
+                with st.spinner("Gemini Kaza Analizi Yapıyor (Lütfen Bekleyin)..."):
+                    analiz_sonucu = kaza_analizi_yap(h_gorseller, h_plaka, h_isim)
+                    st.session_state.son_kaza_analizi = analiz_sonucu
+            else:
+                st.warning("Lütfen İsim, Plaka girin ve en az bir kaza fotoğrafı yükleyin.")
+
+    with h_col2:
+        if "son_kaza_analizi" in st.session_state and st.session_state.son_kaza_analizi:
+            st.success("Hasar Analizi ve Dilekçe Başarıyla Oluşturuldu!")
+            st.markdown("### 📋 Analiz ve Resmi Beyan Raporu")
+            st.info(st.session_state.son_kaza_analizi)
+            
+            if st.button("💾 Raporu Google Sheets'e Kaydet"):
+                try:
+                    zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    sh.worksheet("Hasar Kayıtları").append_row([zaman, h_isim, h_plaka, st.session_state.son_kaza_analizi])
+                    st.success("Kaza Raporu Buluta Kaydedildi!")
+                except Exception as e:
+                    st.error(f"Kayıt Hatası: {e}")
 
 elif sayfa == "⚖️ Karşılaştırma":
     st.title("⚖️ Teklif Karşılaştırma Analizi")
