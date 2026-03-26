@@ -6,3 +6,4 @@ fpdf
 gspread
 pandas
 plotly
+streamlit-mic-recorder
