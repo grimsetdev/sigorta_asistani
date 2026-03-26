@@ -78,6 +78,11 @@ def sheets_baglantisi_kur():
         except:
             ws_huni = sh.add_worksheet(title="Satış Hunisi", rows="1000", cols="20")
             ws_huni.append_row(["ID", "Tarih", "Müşteri Adı", "Telefon", "Konu", "Tahmini Tutar", "Aşama", "Sorumlu"])
+        # YENİ: Şirket Giderleri Sekmesi
+        try: ws_gider = sh.worksheet("Şirket Giderleri")
+        except:
+            ws_gider = sh.add_worksheet(title="Şirket Giderleri", rows="1000", cols="20")
+            ws_gider.append_row(["Tarih", "Gider Kalemi", "Kategori", "Tutar", "Ekleyen"])
         return sh
     except Exception as e:
         st.error(f"Google Sheets Bağlantı Hatası: {e}")
@@ -205,7 +210,6 @@ def kaza_analizi_yap(gorsel_dosyalari, plaka, isim):
         return client.models.generate_content(model=VISION_MODEL, contents=icerik_listesi).text
     except Exception as e: return f"Analiz Hatası: {e}"
 
-# YENİ: KVKK PDF OLUŞTURUCU
 def kvkk_pdf_olustur(musteri_adi, tckn_plaka):
     pdf = FPDF()
     pdf.add_page()
@@ -216,9 +220,7 @@ def kvkk_pdf_olustur(musteri_adi, tckn_plaka):
     pdf.cell(0, 10, "KVKK AYDINLATMA VE ACIK RIZA METNI", ln=True, align="C")
     pdf.ln(10)
     pdf.set_font("Arial", "", 10)
-    
-    metin = f"""Sayin {musteri_adi} (TC/Plaka: {tckn_plaka}),\n\nGrimset Studio olarak, kisisel verilerinizin guvenligi ve gizliligi bizim icin onceliklidir. 6698 sayili Kisisel Verilerin Korunmasi Kanunu (KVKK) kapsaminda, sigorta tekliflerinin hazirlanmasi, police uretim surecleri, risk analizi ve hasar danismanligi hizmetlerinin sunulabilmesi amaciyla paylasmis oldugunuz kisisel verileriniz (kimlik, iletisim, arac, saglik bilgileri vb.) sirketimiz tarafindan veri sorumlusu sifatiyla islenmektedir.\n\nVerileriniz, yalnizca sigortacilik faaliyetlerinin yurutulmesi amaciyla anlasmali oldugumuz sigorta sirketleri, acenteler, eksperler ve yasal zorunluluklar kapsaminda yetkili kamu kurum ve kuruluslari ile paylasilabilecektir.\n\nIsbu aydinlatma metnini okudugunuzu; kisisel verilerinizin Grimset Studio tarafindan islenmesine, saklanmasina ve belirtilen amaclar dogrultusunda yurt ici/yurt disi aktarilmasina ozgur iradenizle 'Acik Riza' verdiginizi kabul, beyan ve taahhut edersiniz.\n\nTarih: {datetime.now().strftime("%d.%m.%Y")}\n\n* Bu belge dijital ortamda olusturulmustur. Tarafimiza iletisim kanallarindan (SMS, E-Posta, WhatsApp) vereceginiz 'ONAYLIYORUM' yaniti, islak imza hukmunde sayilacaktir."""
-    
+    metin = f"""Sayin {musteri_adi} (TC/Plaka: {tckn_plaka}),\n\nGrimset Studio olarak, kisisel verilerinizin guvenligi ve gizliligi bizim icin onceliklidir. 6698 sayili Kisisel Verilerin Korunmasi Kanunu (KVKK) kapsaminda, sigorta tekliflerinin hazirlanmasi, police uretim surecleri, risk analizi ve hasar danismanligi hizmetlerinin sunulabilmesi amaciyla paylasmis oldugunuz kisisel verileriniz (kimlik, iletisim, arac, saglik bilgileri vb.) sirketimiz tarafindan veri sorumlusu sifatiyla islenmektedir.\n\nVerileriniz, yalnizca sigortacilik faaliyetlerinin yurutulmesi amaciyla anlasmali oldugumuz sigorta sirketleri, acenteler, eksperler und yasal zorunluluklar kapsaminda yetkili kamu kurum ve kuruluslari ile paylasilabilecektir.\n\nIsbu aydinlatma metnini okudugunuzu; kisisel verilerinizin Grimset Studio tarafindan islenmesine, saklanmasina ve belirtilen amaclar dogrultusunda yurt ici/yurt disi aktarilmasina ozgur iradenizle 'Acik Riza' verdiginizi kabul, beyan ve taahhut edersiniz.\n\nTarih: {datetime.now().strftime("%d.%m.%Y")}\n\n* Bu belge dijital ortamda olusturulmustur. Tarafimiza iletisim kanallarindan (SMS, E-Posta, WhatsApp) vereceginiz 'ONAYLIYORUM' yaniti, islak imza hukmunde sayilacaktir."""
     pdf.multi_cell(0, 7, metin.translate(tr_map))
     pdf.ln(15)
     pdf.set_font("Arial", "I", 9)
@@ -370,10 +372,7 @@ def komisyon_hesapla(prim_tutari, police_tipi):
     return int(prim_tutari * oran)
 
 def get_status_color(durum):
-    renkler = {
-        "İnceleniyor": "#f39c12", "Eksper Atandı": "#3498db", "Onarımda": "#9b59b6", 
-        "Ödeme Bekleniyor": "#e67e22", "Tamamlandı": "#2ecc71"
-    }
+    renkler = {"İnceleniyor": "#f39c12", "Eksper Atandı": "#3498db", "Onarımda": "#9b59b6", "Ödeme Bekleniyor": "#e67e22", "Tamamlandı": "#2ecc71"}
     return renkler.get(durum, "#95a5a6")
 
 db = veritabani_yukle()
@@ -388,9 +387,10 @@ st.sidebar.markdown("---")
 
 if st.session_state.rol in ["Admin", "Satis"]:
     st.sidebar.title("Modüller")
+    # YENİ: "💸 Gider Yönetimi" eklendi
     menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏥 Sağlık (TSS/ÖSS)", "🏢 Kurumsal Filo (B2B)", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı & Süreç Yönetimi", "⚖️ Karşılaştırma"]
     if st.session_state.rol == "Admin":
-        menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "🕵️‍♂️ AI Müşteri Profilleme", "📊 Finansal Dashboard"])
+        menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "🕵️‍♂️ AI Müşteri Profilleme", "💸 Gider Yönetimi", "📊 Finansal Dashboard"])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 else:
     st.sidebar.title("Müşteri Paneli")
@@ -440,7 +440,6 @@ elif sayfa == "🚗 Hasar Bildir & Takip Et" and st.session_state.rol == "Muster
                         st.write("**Hasar Raporu:**")
                         st.info(h.get("Hasar Raporu", ""))
         except Exception as e: st.error("Hasar verileri çekilemedi.")
-    
     st.markdown("---")
     st.markdown("### ➕ Yeni Hasar Bildir")
     st.info(f"**İşlem Yapılan Araç:** {st.session_state.musteri_plaka} | **Ruhsat Sahibi:** {st.session_state.kullanici_adi}")
@@ -450,7 +449,7 @@ elif sayfa == "🚗 Hasar Bildir & Takip Et" and st.session_state.rol == "Muster
         for idx, img in enumerate(h_gorseller[:3]): gorsel_sutunlari[idx].image(img, use_container_width=True)
     if st.button("🔍 Hasar Raporunu Oluştur ve Acenteme Gönder", type="primary", use_container_width=True):
         if h_gorseller:
-            with st.spinner("Yapay zeka fotoğrafları inceliyor..."):
+            with st.spinner("Yapay zeka fotoğrafları inceliyor, rapor hazırlanıyor..."):
                 analiz = kaza_analizi_yap(h_gorseller, st.session_state.musteri_plaka, st.session_state.kullanici_adi)
                 st.success("Rapor başarıyla oluşturuldu ve Grimset Studio'ya iletildi!")
                 st.info(analiz)
@@ -492,7 +491,6 @@ elif sayfa == "📋 Kayıt & Ayıklama":
             m_tel = st.text_input("Telefon (5XX...)")
             m_plaka = st.text_input("Plaka veya T.C. Kimlik No")
             m_vade = st.date_input("Poliçe Bitiş (Vade) Tarihi")
-            
             if st.form_submit_button("Google Sheets'e Kaydet"):
                 if m_adi and m_plaka and sh:
                     try:
@@ -500,8 +498,6 @@ elif sayfa == "📋 Kayıt & Ayıklama":
                         detay = st.session_state.son_ocr if st.session_state.son_ocr else "Manuel Kayıt"
                         sh.worksheet("Müşteri Portföyü").append_row([zaman, m_adi, m_tel, m_plaka, str(m_vade), detay])
                         st.success("Müşteri portföye eklendi!")
-                        
-                        # KVKK için session state'e atıyoruz
                         st.session_state.son_kayit_isim = m_adi
                         st.session_state.son_kayit_plaka = m_plaka
                         st.session_state.son_kayit_tel = m_tel
@@ -509,14 +505,11 @@ elif sayfa == "📋 Kayıt & Ayıklama":
                     except Exception as e: st.error(f"Hata: {e}")
                 else: st.warning("Ad ve Plaka/T.C. zorunludur.")
         
-        # YENİ MODÜL: KVKK AYDINLATMA VE DİJİTAL ONAY SİSTEMİ
         if st.session_state.son_kayit_isim:
             st.markdown("---")
             st.markdown("### ⚖️ KVKK Aydınlatma ve Açık Rıza Onayı")
             st.success(f"{st.session_state.son_kayit_isim} için sistem kaydı açıldı. Lütfen KVKK onayını alın.")
-            
             kvkk_pdf_data = kvkk_pdf_olustur(st.session_state.son_kayit_isim, st.session_state.son_kayit_plaka)
-            
             c_kvkk1, c_kvkk2 = st.columns(2)
             with c_kvkk1:
                 st.download_button("📄 Resmi KVKK Belgesini İndir", data=kvkk_pdf_data, file_name=f"KVKK_{st.session_state.son_kayit_plaka}.pdf", mime="application/pdf", use_container_width=True)
@@ -552,7 +545,6 @@ elif sayfa == "📝 Poliçe Atölyesi":
     st.markdown("---")
     secilen_dil = st.radio("🌍 Müşteri İletişim Dili (PDF ve Mesaj Şablonu)", ["Türkçe", "English", "Deutsch", "Français"], horizontal=True)
     st.markdown("---")
-    
     col1, col2 = st.columns([1, 1], gap="large")
     with col1:
         p_musteri = st.text_input("Müşteri Adı Soyadı")
@@ -672,7 +664,6 @@ elif sayfa == "🏥 Sağlık (TSS/ÖSS)":
         yas_ek_primi = (s_yas - 18) * (150 if s_tip == "Tamamlayıcı Sağlık Sigortası (TSS)" else 400)
         vki_ek_primi = 3000 if vki >= 30 else 0
         hastalik_ek_primi = 5000 if len(s_hastalik) > 3 else 0
-        
         toplam_saglik_primi = taban_fiyat + yas_ek_primi + vki_ek_primi + hastalik_ek_primi
         net_saglik_komisyonu = komisyon_hesapla(toplam_saglik_primi, s_tip)
         st.markdown(f"### 💰 Hesaplanan Toplam Prim: **{toplam_saglik_primi:,} TL**")
@@ -823,8 +814,9 @@ elif sayfa == "🚗 Hasar Asistanı & Süreç Yönetimi":
             if st.button("💾 Hasar Dosyasını Aç (Kaydet)"):
                 try:
                     sh.worksheet("Hasar Kayıtları").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), h_isim, h_plaka, st.session_state.son_kaza_analizi, "İnceleniyor"])
-                    st.success("Dosya açıldı!")
+                    st.success("Dosya açıldı ve sisteme kaydedildi!")
                 except Exception as e: st.error(f"Hata: {e}")
+
     st.markdown("---")
     st.markdown("### 📂 Aktif Hasar Dosyaları ve Süreç Takibi")
     if sh:
@@ -847,9 +839,9 @@ elif sayfa == "🚗 Hasar Asistanı & Süreç Yönetimi":
                             yeni_durum = st.selectbox("Müşteri Portalında Görünecek Durumu Güncelle", secenekler, index=secili_index, key=f"hdurum_{gercek_idx}")
                             if yeni_durum != r_durum:
                                 ws_hasar.update_cell(gercek_idx + 1, 5, yeni_durum)
-                                st.success("Durum güncellendi!")
+                                st.success("Durum güncellendi! Müşteri portalına yansıdı.")
                                 st.rerun()
-            else: st.info("Açık hasar dosyası bulunmuyor.")
+            else: st.info("Sistemde açık hasar dosyası bulunmuyor.")
         except Exception as e: st.warning(f"Hata: {e}")
 
 elif sayfa == "⚖️ Karşılaştırma":
@@ -957,29 +949,88 @@ elif sayfa == "🕵️‍♂️ AI Müşteri Profilleme" and st.session_state.ro
                             except Exception as e: st.error(f"Hata: {e}")
         except Exception as e: st.warning(f"Hata: {e}")
 
+# YENİ MODÜL: GİDER YÖNETİMİ
+elif sayfa == "💸 Gider Yönetimi" and st.session_state.rol == "Admin":
+    st.title("💸 Şirket Gider Yönetimi")
+    st.markdown("Aylık ofis masraflarını, maaşları ve pazarlama bütçelerini buraya girerek gerçek saf kârınızı hesaplayın.")
+    st.markdown("---")
+    
+    g_col1, g_col2 = st.columns([1, 1.5], gap="large")
+    
+    with g_col1:
+        st.subheader("➕ Yeni Gider Ekle")
+        with st.form("gider_form"):
+            g_kalem = st.text_input("Gider Adı/Açıklaması (Örn: Ofis Kirası, Ali Maaş)")
+            g_kategori = st.selectbox("Kategori", ["Kira & Aidat", "Personel Maaş/Prim", "Pazarlama & Reklam", "Ofis İçi Harcama", "Faturalar (İnternet, Elektrik vs.)", "Diğer"])
+            g_tutar = st.number_input("Tutar (TL)", min_value=0)
+            
+            if st.form_submit_button("Gideri Kaydet"):
+                if g_kalem and g_tutar > 0 and sh:
+                    try:
+                        zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        sh.worksheet("Şirket Giderleri").append_row([zaman, g_kalem, g_kategori, f"{g_tutar} TL", st.session_state.kullanici_adi])
+                        st.success("Gider başarıyla işlendi!")
+                        st.rerun()
+                    except Exception as e: st.error(f"Kayıt Hatası: {e}")
+                else:
+                    st.warning("Lütfen geçerli bir açıklama ve tutar girin.")
+                    
+    with g_col2:
+        st.subheader("📋 Mevcut Şirket Giderleri")
+        if sh:
+            try:
+                giderler = sh.worksheet("Şirket Giderleri").get_all_records()
+                if not giderler:
+                    st.info("Sistemde henüz kaydedilmiş bir gider bulunmuyor.")
+                else:
+                    df_gider = pd.DataFrame(giderler)
+                    st.dataframe(df_gider.iloc[::-1], use_container_width=True) # Ters çevirip son eklenenleri üste aldık
+            except Exception as e:
+                st.warning("Giderler yüklenemedi.")
+
 elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
     st.title("📊 Yönetici Finansal Dashboard (Kâr/Zarar Merkezi)")
     st.markdown("---")
     if sh:
         try:
+            # 1. KAZANÇLARI HESAPLA (Üretilen Poliçeler)
             policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
             if not policeler: st.info("Veri bulunmuyor."); st.stop()
             df = pd.DataFrame(policeler)
             df['Saf Prim'] = df['Toplam Prim'].astype(str).str.replace(' TL', '').str.replace(',', '').astype(float)
-            
             if 'Net Komisyon' not in df.columns: df['Net Komisyon'] = df['Saf Prim'] * 0.10
             else: df['Net Komisyon'] = df['Net Komisyon'].astype(str).str.replace(' TL', '').str.replace(',', '').replace('', '0').astype(float)
-                
             if 'Satış Temsilcisi' not in df.columns: df['Satış Temsilcisi'] = 'Bilinmiyor'
             df['Satış Temsilcisi'] = df['Satış Temsilcisi'].replace('', 'Bilinmiyor').fillna('Bilinmiyor')
             
             toplam_ciro = df['Saf Prim'].sum()
             toplam_komisyon = df['Net Komisyon'].sum()
             
+            # 2. GİDERLERİ HESAPLA (Şirket Giderleri)
+            toplam_gider = 0
+            try:
+                giderler = sh.worksheet("Şirket Giderleri").get_all_records()
+                if giderler:
+                    df_gider = pd.DataFrame(giderler)
+                    toplam_gider = df_gider['Tutar'].astype(str).str.replace(' TL', '').str.replace(',', '').astype(float).sum()
+            except: pass
+            
+            # 3. SAF KÂRI BUL
+            saf_kar = toplam_komisyon - toplam_gider
+            
+            # 4. PATRON EKRANI (BÜYÜK PANO)
+            renk = "#00FF7F" if saf_kar >= 0 else "#FF4500" # Kârda yeşil, zararda kırmızı
+            durum_metni = "Bu tutar tüm masraflar çıktıktan sonra şirketinizin kasasında kalan net nakit kârdır." if saf_kar >= 0 else "Dikkat! Giderleriniz komisyon gelirlerinizi aşmış durumda."
+            
             st.markdown(f"""
-            <div style="background: linear-gradient(90deg, #1A2980 0%, #26D0CE 100%); padding: 20px; border-radius: 10px; color: white; text-align: center; margin-bottom: 20px;">
-                <h2 style="margin:0; color: white;">💰 GRIMSET STUDIO NET KAZANÇ (KOMİSYON)</h2>
-                <h1 style="margin:0; font-size: 3rem; color: #00FF7F;">{int(toplam_komisyon):,} TL</h1>
+            <div style="background: linear-gradient(90deg, #1A2980 0%, #26D0CE 100%); padding: 20px; border-radius: 10px; color: white; text-align: center; margin-bottom: 20px; box-shadow: 0px 4px 15px rgba(0,0,0,0.3);">
+                <h2 style="margin:0; color: white;">💰 GRIMSET STUDIO GERÇEK SAF KÂR</h2>
+                <h1 style="margin:0; font-size: 3.5rem; color: {renk};">{int(saf_kar):,} TL</h1>
+                <p style="margin:0; opacity: 0.9;">{durum_metni}</p>
+                <div style="margin-top: 10px; font-size: 1.1rem;">
+                    <span style="color: #A9DFBF;">Brüt Komisyon: +{int(toplam_komisyon):,} TL</span> | 
+                    <span style="color: #F5B041;">Toplam Gider: -{int(toplam_gider):,} TL</span>
+                </div>
             </div>
             """, unsafe_allow_html=True)
             
@@ -989,17 +1040,18 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
             col3.metric("🏆 En Çok Satılan", str(df['Poliçe Tipi'].mode()[0]))
             
             st.markdown("---")
-            st.subheader("🏆 Satış Ekibi Liderlik Tablosu")
+            st.subheader("🏆 Satış Ekibi Kâr Getirisi (Kim Ne Kadar Kazandırdı?)")
             satis_performansi = df.groupby('Satış Temsilcisi')['Net Komisyon'].sum().reset_index().sort_values(by='Net Komisyon', ascending=False)
             st.plotly_chart(px.bar(satis_performansi, x='Satış Temsilcisi', y='Net Komisyon', text_auto='.2s', color='Satış Temsilcisi'), use_container_width=True)
             
             st.markdown("---")
             g_col1, g_col2 = st.columns(2)
-            with g_col1: st.plotly_chart(px.pie(df, names='Poliçe Tipi', values='Net Komisyon', hole=0.4, color_discrete_sequence=px.colors.sequential.Teal), use_container_width=True)
+            with g_col1: st.plotly_chart(px.pie(df, names='Poliçe Tipi', values='Net Komisyon', hole=0.4, color_discrete_sequence=px.colors.sequential.Teal, title="Ürün Bazlı Kâr Dağılımı"), use_container_width=True)
             with g_col2:
                 df['Kısa Tarih'] = pd.to_datetime(df['Tarih']).dt.date
-                st.plotly_chart(px.bar(df.groupby('Kısa Tarih')['Net Komisyon'].sum().reset_index(), x='Kısa Tarih', y='Net Komisyon', text_auto='.2s', color_discrete_sequence=['#4CAF50']), use_container_width=True)
+                st.plotly_chart(px.bar(df.groupby('Kısa Tarih')['Net Komisyon'].sum().reset_index(), x='Kısa Tarih', y='Net Komisyon', text_auto='.2s', color_discrete_sequence=['#4CAF50'], title="Günlük Komisyon Akışı"), use_container_width=True)
             
             st.markdown("---")
+            st.subheader("Son Kesilen Poliçeler")
             st.dataframe(df[['Tarih', 'Satış Temsilcisi', 'Müşteri Adı', 'Poliçe Tipi', 'Toplam Prim', 'Net Komisyon']].tail(10).iloc[::-1], use_container_width=True)
         except Exception as e: st.warning(f"Hata: {e}")
