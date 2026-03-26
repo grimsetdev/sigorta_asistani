@@ -36,6 +36,7 @@ st.markdown("""
     .churn-high { color: #ff4d4d; font-weight: bold; font-size: 1.2rem; }
     .churn-low { color: #2ecc71; font-weight: bold; font-size: 1.2rem; }
     .otonom-card { background: linear-gradient(135deg, #2b5876 0%, #4e4376 100%); padding: 15px; border-radius: 10px; color: white; margin-bottom: 10px;}
+    .mikro-card { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%); padding: 15px; border-radius: 10px; color: #333; margin-bottom: 10px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -108,6 +109,7 @@ if "giris_yapildi" not in st.session_state:
     st.session_state.rol = None
     st.session_state.kullanici_adi = None
     st.session_state.musteri_plaka = None
+    st.session_state.musteri_tel = None
 
 if not st.session_state.giris_yapildi:
     st.markdown("<br><br><br>", unsafe_allow_html=True)
@@ -157,6 +159,7 @@ if not st.session_state.giris_yapildi:
                                 st.session_state.rol = "Musteri"
                                 st.session_state.kullanici_adi = str(m.get("Müşteri Adı", "Müşteri"))
                                 st.session_state.musteri_plaka = db_plaka
+                                st.session_state.musteri_tel = db_tel
                                 giris_basarili = True
                                 st.rerun()
                                 break
@@ -210,7 +213,6 @@ SADECE aşağıdaki alanları tek bir temiz liste halinde ver. Okunamayan verile
         return client.models.generate_content(model=VISION_MODEL, contents=icerik_listesi).text
     except Exception as e: return f"Hata: {e}"
 
-# YAPAY ZEKA FRAUD (SUİSTİMAL) TESPİT SİSTEMİ EKLİ KAZA ANALİZİ
 def kaza_analizi_yap(gorsel_dosyalari, plaka, isim, beyan="Belirtilmedi"):
     prompt = f"""Sen Grimset Studio'nun adli bilişim ve sigorta suistimal (fraud) eksperisin. 
 Müşterimiz {isim}'e ait {plaka} plakalı aracın kaza görselleri ektedir.
@@ -237,19 +239,7 @@ def kvkk_pdf_olustur(musteri_adi, tckn_plaka):
     pdf.cell(0, 10, "KVKK AYDINLATMA VE ACIK RIZA METNI", ln=True, align="C")
     pdf.ln(10)
     pdf.set_font("Arial", "", 10)
-    
-    metin = f"""Sayin {musteri_adi} (TC/Plaka: {tckn_plaka}),
-
-Grimset Studio olarak, kisisel verilerinizin guvenligi ve gizliligi bizim icin onceliklidir. 6698 sayili Kisisel Verilerin Korunmasi Kanunu (KVKK) kapsaminda, sigorta tekliflerinin hazirlanmasi, police uretim surecleri, risk analizi ve hasar danismanligi hizmetlerinin sunulabilmesi amaciyla paylasmis oldugunuz kisisel verileriniz sirketimiz tarafindan veri sorumlusu sifatiyla islenmektedir.
-
-Verileriniz, yalnizca sigortacilik faaliyetlerinin yurutulmesi amaciyla anlasmali oldugumuz sigorta sirketleri, acenteler, eksperler ve yasal zorunluluklar kapsaminda yetkili kamu kurum ve kuruluslari ile paylasilabilecektir.
-
-Isbu aydinlatma metnini okudugunuzu; kisisel verilerinizin Grimset Studio tarafindan islenmesine, saklanmasina ve belirtilen amaclar dogrultusunda yurt ici/yurt disi aktarilmasina ozgur iradenizle 'Acik Riza' verdiginizi kabul, beyan ve taahhut edersiniz.
-
-Tarih: {datetime.now().strftime("%d.%m.%Y")}
-
-* Bu belge dijital ortamda olusturulmustur. Tarafimiza iletisim kanallarindan (SMS, E-Posta, WhatsApp) vereceginiz 'ONAYLIYORUM' yaniti, islak imza hukmunde sayilacaktir."""
-    
+    metin = f"""Sayin {musteri_adi} (TC/Plaka: {tckn_plaka}),\n\nGrimset Studio olarak, kisisel verilerinizin guvenligi ve gizliligi bizim icin onceliklidir. 6698 sayili Kisisel Verilerin Korunmasi Kanunu (KVKK) kapsaminda, sigorta tekliflerinin hazirlanmasi, police uretim surecleri, risk analizi ve hasar danismanligi hizmetlerinin sunulabilmesi amaciyla paylasmis oldugunuz kisisel verileriniz sirketimiz tarafindan veri sorumlusu sifatiyla islenmektedir.\n\nVerileriniz, yalnizca sigortacilik faaliyetlerinin yurutulmesi amaciyla anlasmali oldugumuz sigorta sirketleri, acenteler, eksperler ve yasal zorunluluklar kapsaminda yetkili kamu kurum ve kuruluslari ile paylasilabilecektir.\n\nIsbu aydinlatma metnini okudugunuzu; kisisel verilerinizin Grimset Studio tarafindan islenmesine, saklanmasina ve belirtilen amaclar dogrultusunda yurt ici/yurt disi aktarilmasina ozgur iradenizle 'Acik Riza' verdiginizi kabul, beyan ve taahhut edersiniz.\n\nTarih: {datetime.now().strftime("%d.%m.%Y")}\n\n* Bu belge dijital ortamda olusturulmustur. Tarafimiza iletisim kanallarindan (SMS, E-Posta, WhatsApp) vereceginiz 'ONAYLIYORUM' yaniti, islak imza hukmunde sayilacaktir."""
     pdf.multi_cell(0, 7, metin.translate(tr_map))
     pdf.ln(15)
     pdf.set_font("Arial", "I", 9)
@@ -259,60 +249,35 @@ Tarih: {datetime.now().strftime("%d.%m.%Y")}
 def pdf_olustur(musteri, plaka, tip, teminatlar, prim, piyasa_fiyati=None, kazanc=None, ref_kodu=None, dil="Türkçe"):
     sozluk = {
         "Türkçe": {
-            "baslik": "GRIMSET STUDIO - POLICE TEKLIFI",
-            "musteri": "Musteri",
-            "plaka": "Arac Plakasi / T.C. No",
-            "tip": "Police Tipi",
-            "teminatlar": "Secili Teminatlar & Ozet:",
-            "grimset_fiyat": "Grimset Ozel Primi:",
-            "piyasa_fiyat": "Piyasa Ortalamasi:",
-            "kazanc": "Sizin Kazanciniz:",
-            "ref_baslik": "Size Ozel Kazandiran Paylasim Kodunuz!",
+            "baslik": "GRIMSET STUDIO - POLICE TEKLIFI", "musteri": "Musteri", "plaka": "Arac Plakasi / T.C. No", "tip": "Police Tipi",
+            "teminatlar": "Secili Teminatlar & Ozet:", "grimset_fiyat": "Grimset Ozel Primi:", "piyasa_fiyat": "Piyasa Ortalamasi:",
+            "kazanc": "Sizin Kazanciniz:", "ref_baslik": "Size Ozel Kazandiran Paylasim Kodunuz!",
             "ref_metin": "Bu kodu arkadaslarinizla paylasin. Arkadaslariniz bu kodla aninda %5 indirim kazanirken, siz de bir sonraki police yenilemenizde %10 indirim kazanin!"
         },
         "English": {
-            "baslik": "GRIMSET STUDIO - INSURANCE QUOTE",
-            "musteri": "Customer",
-            "plaka": "License Plate / ID",
-            "tip": "Policy Type",
-            "teminatlar": "Selected Coverages & Summary:",
-            "grimset_fiyat": "Grimset Special Premium:",
-            "piyasa_fiyat": "Market Average:",
-            "kazanc": "Your Total Savings:",
-            "ref_baslik": "Your Exclusive Affiliate Code!",
+            "baslik": "GRIMSET STUDIO - INSURANCE QUOTE", "musteri": "Customer", "plaka": "License Plate / ID", "tip": "Policy Type",
+            "teminatlar": "Selected Coverages & Summary:", "grimset_fiyat": "Grimset Special Premium:", "piyasa_fiyat": "Market Average:",
+            "kazanc": "Your Total Savings:", "ref_baslik": "Your Exclusive Affiliate Code!",
             "ref_metin": "Share this code with friends. They get a 5% instant discount, and you get a 10% discount on your next renewal!"
         },
         "Deutsch": {
-            "baslik": "GRIMSET STUDIO - VERSICHERUNGSANGEBOT",
-            "musteri": "Kunde",
-            "plaka": "Kennzeichen / ID",
-            "tip": "Versicherungsart",
-            "teminatlar": "Gewaehlter Schutz:",
-            "grimset_fiyat": "Grimset Spezialpraemie:",
-            "piyasa_fiyat": "Marktdurchschnitt:",
-            "kazanc": "Ihre Ersparnis:",
-            "ref_baslik": "Ihr exklusiver Empfehlungscode!",
+            "baslik": "GRIMSET STUDIO - VERSICHERUNGSANGEBOT", "musteri": "Kunde", "plaka": "Kennzeichen / ID", "tip": "Versicherungsart",
+            "teminatlar": "Gewaehlter Schutz:", "grimset_fiyat": "Grimset Spezialpraemie:", "piyasa_fiyat": "Marktdurchschnitt:",
+            "kazanc": "Ihre Ersparnis:", "ref_baslik": "Ihr exklusiver Empfehlungscode!",
             "ref_metin": "Teilen Sie diesen Code. Freunde erhalten 5% Rabatt, und Sie erhalten 10% Rabatt auf Ihre naechste Verlaengerung!"
         },
         "Français": {
-            "baslik": "GRIMSET STUDIO - DEVIS D'ASSURANCE",
-            "musteri": "Client",
-            "plaka": "Plaque / ID",
-            "tip": "Type de Police",
-            "teminatlar": "Garanties Choisies:",
-            "grimset_fiyat": "Prime Speciale Grimset:",
-            "piyasa_fiyat": "Moyenne du Marche:",
-            "kazanc": "Vos Economies:",
-            "ref_baslik": "Votre Code de Parrainage Exclusif!",
+            "baslik": "GRIMSET STUDIO - DEVIS D'ASSURANCE", "musteri": "Client", "plaka": "Plaque / ID", "tip": "Type de Police",
+            "teminatlar": "Garanties Choisies:", "grimset_fiyat": "Prime Speciale Grimset:", "piyasa_fiyat": "Moyenne du Marche:",
+            "kazanc": "Vos Economies:", "ref_baslik": "Votre Code de Parrainage Exclusif!",
             "ref_metin": "Partagez ce code. Vos amis obtiennent 5% de reduction, et vous obtenez 10% sur votre prochain renouvellement!"
         }
     }
     d = sozluk.get(dil, sozluk["Türkçe"])
-    
     tip_cevirileri = {
-        "English": {"Kasko": "Comprehensive Insurance", "Zorunlu Trafik Sigortası": "Compulsory Traffic Insurance", "DASK": "Earthquake Insurance", "Tamamlayıcı Sağlık Sigortası (TSS)": "Supplementary Health Insurance", "Özel Sağlık Sigortası (ÖSS)": "Private Health Insurance"},
-        "Deutsch": {"Kasko": "Vollkaskoversicherung", "Zorunlu Trafik Sigortası": "Kfz-Haftpflicht", "DASK": "Erdbebenversicherung", "Tamamlayıcı Sağlık Sigortası (TSS)": "Zusatzkrankenversicherung", "Özel Sağlık Sigortası (ÖSS)": "Private Krankenversicherung"},
-        "Français": {"Kasko": "Assurance Tous Risques", "Zorunlu Trafik Sigortası": "Assurance au Tiers", "DASK": "Assurance Tremblement de Terre", "Tamamlayıcı Sağlık Sigortası (TSS)": "Complémentaire Santé", "Özel Sağlık Sigortası (ÖSS)": "Assurance Santé Privée"}
+        "English": {"Kasko": "Comprehensive Insurance", "Zorunlu Trafik Sigortası": "Compulsory Traffic", "DASK": "Earthquake Insurance", "Tamamlayıcı Sağlık Sigortası (TSS)": "Supplementary Health", "Özel Sağlık Sigortası (ÖSS)": "Private Health", "Seyahat Sağlık (Yurt Dışı)": "Travel Insurance", "Elektronik Cihaz (Telefon/Laptop)": "Device Insurance", "Evcil Hayvan (Pati) Acil Durum": "Pet Insurance", "Kısa Süreli Kiralık Araç Kaskosu": "Rental Car Insurance"},
+        "Deutsch": {"Kasko": "Vollkaskoversicherung", "Zorunlu Trafik Sigortası": "Kfz-Haftpflicht", "DASK": "Erdbebenversicherung", "Tamamlayıcı Sağlık Sigortası (TSS)": "Zusatzkrankenversicherung", "Özel Sağlık Sigortası (ÖSS)": "Private Krankenversicherung", "Seyahat Sağlık (Yurt Dışı)": "Reiseversicherung", "Elektronik Cihaz (Telefon/Laptop)": "Geräteversicherung", "Evcil Hayvan (Pati) Acil Durum": "Haustierversicherung", "Kısa Süreli Kiralık Araç Kaskosu": "Mietwagenversicherung"},
+        "Français": {"Kasko": "Assurance Tous Risques", "Zorunlu Trafik Sigortası": "Assurance au Tiers", "DASK": "Assurance Tremblement de Terre", "Tamamlayıcı Sağlık Sigortası (TSS)": "Complémentaire Santé", "Özel Sağlık Sigortası (ÖSS)": "Assurance Santé Privée", "Seyahat Sağlık (Yurt Dışı)": "Assurance Voyage", "Elektronik Cihaz (Telefon/Laptop)": "Assurance Appareil", "Evcil Hayvan (Pati) Acil Durum": "Assurance Animaux", "Kısa Süreli Kiralık Araç Kaskosu": "Assurance Voiture de Location"}
     }
     if dil != "Türkçe" and tip in tip_cevirileri[dil]: tip = tip_cevirileri[dil][tip]
 
@@ -382,44 +347,11 @@ def filo_pdf_olustur(firma, plaka_listesi, tip, prim):
     pdf.cell(0, 10, f"Uygulanan Filo Indirimi Sonrasi Toplam Prim: {prim:,} TL", ln=True)
     return pdf.output(dest="S").encode("latin-1")
 
-def eposta_gonder(alici_mail, musteri_adi, plaka, tip, teminatlar, prim, pdf_bytes, dil="Türkçe"):
-    gonderen_mail = st.secrets.get("SMTP_EMAIL")
-    sifre = st.secrets.get("SMTP_PASSWORD")
-    if not gonderen_mail or not sifre: return False, "E-Posta ayarları eksik!"
-    
-    konular = {
-        "Türkçe": f"{plaka} Poliçe / Teklifiniz",
-        "English": f"Your {tip} Quote for {plaka}",
-        "Deutsch": f"Ihr {tip} Angebot für {plaka}",
-        "Français": f"Votre devis {tip} pour {plaka}"
-    }
-    mesajlar = {
-        "Türkçe": f"Merhaba {musteri_adi},\n\nGrimset Studio güvencesiyle {plaka} için hazırlanan {tip} teklifiniz ektedir.\n\nToplam Prim: {prim}\n\nİyi çalışmalar dileriz.",
-        "English": f"Hello {musteri_adi},\n\nYour {tip} quote for {plaka} by Grimset Studio is attached.\n\nTotal Premium: {prim}\n\nBest regards.",
-        "Deutsch": f"Hallo {musteri_adi},\n\nIhr {tip} Angebot für {plaka} von Grimset Studio ist beigefügt.\n\nGesamtprämie: {prim}\n\nMit freundlichen Grüßen.",
-        "Français": f"Bonjour {musteri_adi},\n\nVotre devis {tip} pour {plaka} par Grimset Studio est en pièce jointe.\n\nPrime Totale: {prim}\n\nCordialement."
-    }
-    
-    msg = MIMEMultipart()
-    msg['From'] = f"Grimset Studio <{gonderen_mail}>"
-    msg['To'] = alici_mail
-    msg['Subject'] = konular.get(dil, konular["Türkçe"])
-    msg.attach(MIMEText(mesajlar.get(dil, mesajlar["Türkçe"]), 'plain', 'utf-8'))
-    part = MIMEApplication(pdf_bytes, Name=f"Grimset_Quote_{plaka}.pdf")
-    part['Content-Disposition'] = f'attachment; filename="Grimset_Quote_{plaka}.pdf"'
-    msg.attach(part)
-    try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(gonderen_mail, sifre)
-        server.send_message(msg)
-        server.quit()
-        return True, "Teklif başarıyla gönderildi!"
-    except Exception as e: return False, f"Gönderim hatası: {e}"
-
 def komisyon_hesapla(prim_tutari, police_tipi):
     if police_tipi in ["Kasko", "Filo Kasko", "DASK", "Tamamlayıcı Sağlık Sigortası (TSS)", "Özel Sağlık Sigortası (ÖSS)"]: oran = 0.15
     elif police_tipi in ["Zorunlu Trafik Sigortası", "Filo Zorunlu Trafik Sigortası"]: oran = 0.08
+    # MİKRO SİGORTALAR (Yüksek kârlıdır)
+    elif police_tipi in ["Seyahat Sağlık (Yurt Dışı)", "Elektronik Cihaz (Telefon/Laptop)", "Evcil Hayvan (Pati) Acil Durum", "Kısa Süreli Kiralık Araç Kaskosu"]: oran = 0.25
     else: oran = 0.10
     return int(prim_tutari * oran)
 
@@ -493,9 +425,11 @@ st.sidebar.markdown("---")
 
 if st.session_state.rol in ["Admin", "Satis"]:
     st.sidebar.title("Modüller")
+    # YENİ: "⏱️ Mikro Sigorta (On-Demand)" eklendi
     menu_secenekleri = [
         "📋 Kayıt & Ayıklama", 
         "📝 Poliçe Atölyesi", 
+        "⏱️ Mikro Sigorta (On-Demand)",
         "🏥 Sağlık (TSS/ÖSS)", 
         "🏢 Kurumsal Filo (B2B)", 
         "⏰ Vade & Otonom Yenileme", 
@@ -514,7 +448,8 @@ if st.session_state.rol in ["Admin", "Satis"]:
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 else:
     st.sidebar.title("Müşteri Paneli")
-    menu_secenekleri = ["🏠 Poliçelerim", "🚗 Hasar Bildir & Takip Et", "🗄️ Evrak Kasam"]
+    # YENİ: Müşteri tarafına eklendi
+    menu_secenekleri = ["🏠 Poliçelerim", "⏱️ Mikro Sigorta Al", "🚗 Hasar Bildir & Takip Et", "🗄️ Evrak Kasam"]
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 
 st.sidebar.markdown("---")
@@ -543,6 +478,62 @@ if sayfa == "🏠 Poliçelerim" and st.session_state.rol == "Musteri":
                         st.markdown("---")
         except Exception as e: st.error(f"Veriler çekilirken hata oluştu: {e}")
 
+# YENİ MODÜL: KULLAN-AT MİKRO SİGORTA (MÜŞTERİ TARAFINDAN SELF-SERVİS)
+elif sayfa == "⏱️ Mikro Sigorta Al" and st.session_state.rol == "Musteri":
+    st.title("⏱️ Anlık & Kısa Süreli Mikro Sigorta (Pay-As-You-Go)")
+    st.markdown("İhtiyacınız olan güvenceyi, sadece ihtiyacınız olan **gün sayısı kadar** satın alın. Anında dijital kasanızda!")
+    st.markdown("---")
+    
+    m_col1, m_col2 = st.columns([1, 1], gap="large")
+    
+    with m_col1:
+        urun_fiyatlari = {
+            "Seyahat Sağlık (Yurt Dışı)": 60,
+            "Elektronik Cihaz (Telefon/Laptop)": 35,
+            "Evcil Hayvan (Pati) Acil Durum": 25,
+            "Kısa Süreli Kiralık Araç Kaskosu": 150
+        }
+        
+        m_urun = st.selectbox("Koruma Altına Alınacak Konu:", list(urun_fiyatlari.keys()))
+        m_gun = st.slider("Kaç Günlük Güvence İstiyorsunuz?", min_value=1, max_value=30, value=3)
+        m_detay = st.text_input("Gerekli Detay (Pasaport No, Cihaz IMEI, Çip No vb.)", placeholder="Örn: TR1234567")
+        
+    with m_col2:
+        gunluk_fiyat = urun_fiyatlari[m_urun]
+        toplam_fiyat = gunluk_fiyat * m_gun
+        
+        st.markdown(f"""
+        <div class="mikro-card">
+            <h4>Seçilen Paket: {m_urun}</h4>
+            <p>Süre: <b>{m_gun} Gün</b></p>
+            <h2 style="color: #d81b60;">Toplam: {toplam_fiyat} TL</h2>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("💳 Kredi Kartı İle Hemen Öde (Simülasyon)", type="primary", use_container_width=True):
+            if m_detay and sh:
+                with st.spinner("Ödeme alınıyor ve poliçeniz saniyeler içinde oluşturuluyor..."):
+                    zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    teminat_ozeti = f"Sure: {m_gun} Gun\nKapsam Tipi: Kullan-At (On-Demand)\nDetay/ID: {m_detay}"
+                    komisyon = komisyon_hesapla(toplam_fiyat, m_urun)
+                    
+                    try:
+                        # Poliçeyi kaydet
+                        sh.worksheet("Üretilen Poliçeler").append_row([zaman, st.session_state.kullanici_adi, st.session_state.musteri_plaka, m_urun, teminat_ozeti, f"{toplam_fiyat} TL", "Self-Servis (Web)", f"{komisyon} TL"])
+                        
+                        # PDF'i oluşturup Evrak Kasasına kilitle
+                        pdf_bytes = pdf_olustur(st.session_state.kullanici_adi, st.session_state.musteri_plaka, m_urun, teminat_ozeti, f"{toplam_fiyat} TL")
+                        dosya_adi = f"{st.session_state.musteri_plaka}_{datetime.now().strftime('%Y%m%d%H%M%S')}_MikroPolice.pdf"
+                        dosya_yolu = os.path.join(EVRAK_KASASI_KLASORU, dosya_adi)
+                        with open(dosya_yolu, "wb") as f: f.write(pdf_bytes)
+                        sh.worksheet("Evrak Kasası").append_row([zaman, st.session_state.kullanici_adi, st.session_state.musteri_plaka, "Mikro Poliçe", dosya_adi, "Sistem"])
+                        
+                        st.success("✅ Ödeme başarılı! Poliçeniz oluşturuldu ve 🗄️ Evrak Kasanıza eklendi.")
+                    except Exception as e:
+                        st.error(f"Hata oluştu: {e}")
+            else:
+                st.warning("Lütfen Cihaz/Pasaport gibi gerekli detay bilgisini doldurun.")
+
 elif sayfa == "🚗 Hasar Bildir & Takip Et" and st.session_state.rol == "Musteri":
     st.title("🚗 Hasar Bildirim ve Dosya Takip Merkezi")
     st.markdown("### 📋 Mevcut Hasar Dosyalarınız")
@@ -564,7 +555,6 @@ elif sayfa == "🚗 Hasar Bildir & Takip Et" and st.session_state.rol == "Muster
     st.markdown("---")
     st.markdown("### ➕ Yeni Hasar Bildir (AI Suistimal Kontrollü)")
     st.info(f"**İşlem Yapılan Araç:** {st.session_state.musteri_plaka} | **Ruhsat Sahibi:** {st.session_state.kullanici_adi}")
-    
     h_beyan = st.text_area("Kaza nasıl gerçekleşti? (Kendi kelimelerinizle detaylıca anlatın)", placeholder="Örn: Kırmızı ışıkta beklerken arkadan gelen beyaz bir araç aracıma çarptı...")
     h_gorseller = st.file_uploader("Kaza ve Tutanak Fotoğrafları Yükle", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
     
@@ -781,6 +771,82 @@ elif sayfa == "📝 Poliçe Atölyesi":
             wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={urllib.parse.quote(wp_mesaj)}" if p_tel else f"https://wa.me/?text={urllib.parse.quote(wp_mesaj)}"
             st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp Gönder ({secilen_dil})</div></a>', unsafe_allow_html=True)
 
+# YENİ MODÜL: MİKRO SİGORTA (PERSONEL/ADMİN TARAFINDAN HIZLI SATIŞ)
+elif sayfa == "⏱️ Mikro Sigorta (On-Demand)":
+    st.title("⏱️ Anlık & Kısa Süreli Mikro Sigorta Satışı")
+    st.markdown("Müşterilere telefon veya stant üzerinden hızlıca kullan-at (Pay-As-You-Go) poliçe satın. Sürümden kazanın!")
+    st.markdown("---")
+    
+    m_col1, m_col2 = st.columns([1, 1], gap="large")
+    
+    with m_col1:
+        p_musteri = st.text_input("Müşteri Adı Soyadı")
+        p_tc_plaka = st.text_input("T.C. No veya Plaka")
+        p_tel = st.text_input("Telefon (WhatsApp İçin)")
+        
+        st.markdown("---")
+        urun_fiyatlari = {
+            "Seyahat Sağlık (Yurt Dışı)": 60,
+            "Elektronik Cihaz (Telefon/Laptop)": 35,
+            "Evcil Hayvan (Pati) Acil Durum": 25,
+            "Kısa Süreli Kiralık Araç Kaskosu": 150
+        }
+        
+        m_urun = st.selectbox("Koruma Altına Alınacak Konu:", list(urun_fiyatlari.keys()))
+        m_gun = st.slider("Kaç Günlük Güvence İstiyorsunuz?", min_value=1, max_value=30, value=3)
+        m_detay = st.text_input("Gerekli Detay (Pasaport No, Cihaz IMEI, Çip No vb.)", placeholder="Örn: TR1234567")
+        
+    with m_col2:
+        gunluk_fiyat = urun_fiyatlari[m_urun]
+        toplam_fiyat = gunluk_fiyat * m_gun
+        komisyon = komisyon_hesapla(toplam_fiyat, m_urun)
+        
+        st.markdown(f"""
+        <div class="mikro-card">
+            <h4>Seçilen Paket: {m_urun}</h4>
+            <p>Süre: <b>{m_gun} Gün</b></p>
+            <h2 style="color: #d81b60;">Toplam: {toplam_fiyat} TL</h2>
+            <p style="font-size: 0.9rem; color: #555;"><i>Grimset Net Komisyon (%25): +{komisyon} TL</i></p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("💳 Tahsil Et & Sisteme İşle", type="primary", use_container_width=True):
+                if p_musteri and p_tc_plaka and m_detay and sh:
+                    with st.spinner("Poliçe kaydediliyor..."):
+                        zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        teminat_ozeti = f"Sure: {m_gun} Gun\nKapsam Tipi: Kullan-At (On-Demand)\nDetay/ID: {m_detay}"
+                        try:
+                            sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_tc_plaka, m_urun, teminat_ozeti, f"{toplam_fiyat} TL", st.session_state.kullanici_adi, f"{komisyon} TL"])
+                            
+                            pdf_bytes = pdf_olustur(p_musteri, p_tc_plaka, m_urun, teminat_ozeti, f"{toplam_fiyat} TL")
+                            dosya_adi = f"{p_tc_plaka}_{datetime.now().strftime('%Y%m%d%H%M%S')}_MikroPolice.pdf"
+                            dosya_yolu = os.path.join(EVRAK_KASASI_KLASORU, dosya_adi)
+                            with open(dosya_yolu, "wb") as f: f.write(pdf_bytes)
+                            sh.worksheet("Evrak Kasası").append_row([zaman, p_musteri, p_tc_plaka, "Mikro Poliçe", dosya_adi, st.session_state.kullanici_adi])
+                            
+                            try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_tc_plaka, "", "Mikro Sigorta"])
+                            except: pass
+                            
+                            st.success("✅ Poliçe kesildi ve müşterinin evrak kasasına arşivlendi!")
+                        except Exception as e:
+                            st.error(f"Hata oluştu: {e}")
+                else:
+                    st.warning("Müşteri adı, TC/Plaka ve IMEI/Pasaport detayı zorunludur.")
+        
+        with col_btn2:
+            if p_musteri and p_tc_plaka and m_detay:
+                teminat_ozeti = f"Sure: {m_gun} Gun\nKapsam Tipi: Kullan-At (On-Demand)\nDetay/ID: {m_detay}"
+                st.download_button("📄 PDF İndir", data=pdf_olustur(p_musteri, p_tc_plaka, m_urun, teminat_ozeti, f"{toplam_fiyat} TL"), file_name=f"Grimset_Mikro_{p_tc_plaka}.pdf", mime="application/pdf", use_container_width=True)
+
+        if p_musteri and p_tc_plaka and m_detay and p_tel:
+            st.markdown("---")
+            wp_mesaj = f"Sayın {p_musteri},\nGrimset Studio güvencesiyle {m_urun} poliçeniz başarıyla oluşturulmuştur.\n\nSüre: {m_gun} Gün\nToplam Tutar: {toplam_fiyat} TL\n\nPoliçenizin PDF haline 'Müşteri Portalı -> Evrak Kasam' menüsünden 7/24 ulaşabilirsiniz. İyi günler dileriz!"
+            wa_link = f"https://wa.me/90{str(p_tel).replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={urllib.parse.quote(wp_mesaj)}"
+            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 Bilgilendirmeyi WhatsApp\'tan Gönder</div></a>', unsafe_allow_html=True)
+
+
 elif sayfa == "🏥 Sağlık (TSS/ÖSS)":
     st.title("🏥 Sağlık Sigortası Yapay Zeka Fiyatlama Robotu")
     st.markdown("---")
@@ -953,7 +1019,10 @@ elif sayfa == "📌 Satış Hunisi (Kanban)":
                     try:
                         policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
                         fiyatlar = set([str(p.get("Toplam Prim", "")) for p in policeler if "TL" in str(p.get("Toplam Prim", ""))])
-                        gecmis_tutarlar.extend(sorted(list(fiyatlar), key=temizle_fiyat))
+                        def parse_fiyat(f):
+                            try: return float(f.replace(" TL", "").replace(",", "").replace(".", ""))
+                            except: return 0
+                        gecmis_tutarlar.extend(sorted(list(fiyatlar), key=parse_fiyat))
                     except: pass
                     gecmis_tutarlar.append("Diğer (Manuel Gir)")
                     h_tutar_secim = st.selectbox("Tahmini Tutar", gecmis_tutarlar)
@@ -995,7 +1064,6 @@ elif sayfa == "📌 Satış Hunisi (Kanban)":
             else: st.info("Takip edilen fırsat yok.")
         except Exception as e: st.warning(f"Hata: {e}")
 
-# YÖNETİCİ TARAFINDA DA KAZA BEYANI VE AI SUİSTİMAL KONTROLÜ
 elif sayfa == "🚗 Hasar Asistanı & Süreç Yönetimi":
     st.title("🚗 Kaza ve Hasar Destek & Süreç Yönetimi (AI Suistimal Kontrol)")
     st.markdown("---")
