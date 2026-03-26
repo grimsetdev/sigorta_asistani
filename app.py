@@ -96,12 +96,27 @@ def sheets_baglantisi_kur():
         except:
             ws_evrak = sh.add_worksheet(title="Evrak Kasası", rows="1000", cols="20")
             ws_evrak.append_row(["Tarih", "Müşteri Adı", "Plaka", "Evrak Tipi", "Dosya Adı", "Ekleyen"])
+        # YENİ: Denetim İzi (Audit Log) Sekmesi
+        try: ws_audit = sh.worksheet("Audit Log")
+        except:
+            ws_audit = sh.add_worksheet(title="Audit Log", rows="1000", cols="20")
+            ws_audit.append_row(["Tarih", "Kullanıcı", "Rol", "İşlem Türü", "İşlem Detayı"])
         return sh
     except Exception as e:
         st.error(f"Google Sheets Bağlantı Hatası: {e}")
         return None
 
 sh = sheets_baglantisi_kur()
+
+# --- YENİ EKLENEN: DENETİM İZİ (AUDIT LOG) FONKSİYONU ---
+def log_action(kullanici, rol, islem_turu, islem_detayi):
+    """Sistemdeki her kritik hareketi kaydeder (Anti-Sabotaj)."""
+    if sh:
+        try:
+            zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            sh.worksheet("Audit Log").append_row([zaman, kullanici, rol, islem_turu, islem_detayi])
+        except:
+            pass # Log hatası ana sistemi durdurmasın
 
 # --- OTURUM YÖNETİMİ ---
 if "giris_yapildi" not in st.session_state:
@@ -129,11 +144,13 @@ if not st.session_state.giris_yapildi:
                     st.session_state.giris_yapildi = True
                     st.session_state.rol = "Admin"
                     st.session_state.kullanici_adi = "Yönetici"
+                    log_action("Yönetici", "Admin", "Sisteme Giriş", "Başarılı personel girişi yapıldı.")
                     st.rerun()
                 elif k_adi == "ali" and sifre == "satis123":
                     st.session_state.giris_yapildi = True
                     st.session_state.rol = "Satis"
                     st.session_state.kullanici_adi = "Ali"
+                    log_action("Ali", "Satis", "Sisteme Giriş", "Başarılı personel girişi yapıldı.")
                     st.rerun()
                 else:
                     st.error("Hatalı kullanıcı adı veya şifre!")
@@ -161,6 +178,7 @@ if not st.session_state.giris_yapildi:
                                 st.session_state.musteri_plaka = db_plaka
                                 st.session_state.musteri_tel = db_tel
                                 giris_basarili = True
+                                log_action(st.session_state.kullanici_adi, "Musteri", "Müşteri Portalı Girişi", f"Plaka/TC: {db_plaka}")
                                 st.rerun()
                                 break
                         if not giris_basarili: st.error("Sistemde bu bilgi ve telefon numarasıyla eşleşen kayıt bulunamadı.")
@@ -239,7 +257,9 @@ def kvkk_pdf_olustur(musteri_adi, tckn_plaka):
     pdf.cell(0, 10, "KVKK AYDINLATMA VE ACIK RIZA METNI", ln=True, align="C")
     pdf.ln(10)
     pdf.set_font("Arial", "", 10)
+    
     metin = f"""Sayin {musteri_adi} (TC/Plaka: {tckn_plaka}),\n\nGrimset Studio olarak, kisisel verilerinizin guvenligi ve gizliligi bizim icin onceliklidir. 6698 sayili Kisisel Verilerin Korunmasi Kanunu (KVKK) kapsaminda, sigorta tekliflerinin hazirlanmasi, police uretim surecleri, risk analizi ve hasar danismanligi hizmetlerinin sunulabilmesi amaciyla paylasmis oldugunuz kisisel verileriniz sirketimiz tarafindan veri sorumlusu sifatiyla islenmektedir.\n\nVerileriniz, yalnizca sigortacilik faaliyetlerinin yurutulmesi amaciyla anlasmali oldugumuz sigorta sirketleri, acenteler, eksperler ve yasal zorunluluklar kapsaminda yetkili kamu kurum ve kuruluslari ile paylasilabilecektir.\n\nIsbu aydinlatma metnini okudugunuzu; kisisel verilerinizin Grimset Studio tarafindan islenmesine, saklanmasina ve belirtilen amaclar dogrultusunda yurt ici/yurt disi aktarilmasina ozgur iradenizle 'Acik Riza' verdiginizi kabul, beyan ve taahhut edersiniz.\n\nTarih: {datetime.now().strftime("%d.%m.%Y")}\n\n* Bu belge dijital ortamda olusturulmustur. Tarafimiza iletisim kanallarindan (SMS, E-Posta, WhatsApp) vereceginiz 'ONAYLIYORUM' yaniti, islak imza hukmunde sayilacaktir."""
+    
     pdf.multi_cell(0, 7, metin.translate(tr_map))
     pdf.ln(15)
     pdf.set_font("Arial", "I", 9)
@@ -274,6 +294,7 @@ def pdf_olustur(musteri, plaka, tip, teminatlar, prim, piyasa_fiyati=None, kazan
         }
     }
     d = sozluk.get(dil, sozluk["Türkçe"])
+    
     tip_cevirileri = {
         "English": {"Kasko": "Comprehensive Insurance", "Zorunlu Trafik Sigortası": "Compulsory Traffic", "DASK": "Earthquake Insurance", "Tamamlayıcı Sağlık Sigortası (TSS)": "Supplementary Health", "Özel Sağlık Sigortası (ÖSS)": "Private Health", "Seyahat Sağlık (Yurt Dışı)": "Travel Insurance", "Elektronik Cihaz (Telefon/Laptop)": "Device Insurance", "Evcil Hayvan (Pati) Acil Durum": "Pet Insurance", "Kısa Süreli Kiralık Araç Kaskosu": "Rental Car Insurance"},
         "Deutsch": {"Kasko": "Vollkaskoversicherung", "Zorunlu Trafik Sigortası": "Kfz-Haftpflicht", "DASK": "Erdbebenversicherung", "Tamamlayıcı Sağlık Sigortası (TSS)": "Zusatzkrankenversicherung", "Özel Sağlık Sigortası (ÖSS)": "Private Krankenversicherung", "Seyahat Sağlık (Yurt Dışı)": "Reiseversicherung", "Elektronik Cihaz (Telefon/Laptop)": "Geräteversicherung", "Evcil Hayvan (Pati) Acil Durum": "Haustierversicherung", "Kısa Süreli Kiralık Araç Kaskosu": "Mietwagenversicherung"},
@@ -350,7 +371,6 @@ def filo_pdf_olustur(firma, plaka_listesi, tip, prim):
 def komisyon_hesapla(prim_tutari, police_tipi):
     if police_tipi in ["Kasko", "Filo Kasko", "DASK", "Tamamlayıcı Sağlık Sigortası (TSS)", "Özel Sağlık Sigortası (ÖSS)"]: oran = 0.15
     elif police_tipi in ["Zorunlu Trafik Sigortası", "Filo Zorunlu Trafik Sigortası"]: oran = 0.08
-    # MİKRO SİGORTALAR (Yüksek kârlıdır)
     elif police_tipi in ["Seyahat Sağlık (Yurt Dışı)", "Elektronik Cihaz (Telefon/Laptop)", "Evcil Hayvan (Pati) Acil Durum", "Kısa Süreli Kiralık Araç Kaskosu"]: oran = 0.25
     else: oran = 0.10
     return int(prim_tutari * oran)
@@ -369,6 +389,7 @@ db = veritabani_yukle()
 st.sidebar.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=150)
 st.sidebar.markdown(f"**👤 Aktif Kullanıcı:** {st.session_state.kullanici_adi}")
 if st.sidebar.button("🚪 Çıkış Yap", use_container_width=True):
+    log_action(st.session_state.kullanici_adi, st.session_state.rol, "Sistemden Çıkış", "Kullanıcı çıkış yaptı.")
     st.session_state.giris_yapildi = False
     st.rerun()
 
@@ -425,7 +446,6 @@ st.sidebar.markdown("---")
 
 if st.session_state.rol in ["Admin", "Satis"]:
     st.sidebar.title("Modüller")
-    # YENİ: "⏱️ Mikro Sigorta (On-Demand)" eklendi
     menu_secenekleri = [
         "📋 Kayıt & Ayıklama", 
         "📝 Poliçe Atölyesi", 
@@ -443,12 +463,12 @@ if st.session_state.rol in ["Admin", "Satis"]:
             "🎯 Kampanya Motoru", 
             "📈 LTV & Churn Analizi", 
             "💸 Gider Yönetimi", 
-            "📊 Finansal & Coğrafi Dashboard"
+            "📊 Finansal & Coğrafi Dashboard",
+            "🔐 Denetim İzi (Audit Log)" # YENİ: SADECE YÖNETİCİYE ÖZEL
         ])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 else:
     st.sidebar.title("Müşteri Paneli")
-    # YENİ: Müşteri tarafına eklendi
     menu_secenekleri = ["🏠 Poliçelerim", "⏱️ Mikro Sigorta Al", "🚗 Hasar Bildir & Takip Et", "🗄️ Evrak Kasam"]
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 
@@ -478,61 +498,36 @@ if sayfa == "🏠 Poliçelerim" and st.session_state.rol == "Musteri":
                         st.markdown("---")
         except Exception as e: st.error(f"Veriler çekilirken hata oluştu: {e}")
 
-# YENİ MODÜL: KULLAN-AT MİKRO SİGORTA (MÜŞTERİ TARAFINDAN SELF-SERVİS)
 elif sayfa == "⏱️ Mikro Sigorta Al" and st.session_state.rol == "Musteri":
     st.title("⏱️ Anlık & Kısa Süreli Mikro Sigorta (Pay-As-You-Go)")
-    st.markdown("İhtiyacınız olan güvenceyi, sadece ihtiyacınız olan **gün sayısı kadar** satın alın. Anında dijital kasanızda!")
     st.markdown("---")
-    
     m_col1, m_col2 = st.columns([1, 1], gap="large")
-    
     with m_col1:
-        urun_fiyatlari = {
-            "Seyahat Sağlık (Yurt Dışı)": 60,
-            "Elektronik Cihaz (Telefon/Laptop)": 35,
-            "Evcil Hayvan (Pati) Acil Durum": 25,
-            "Kısa Süreli Kiralık Araç Kaskosu": 150
-        }
-        
+        urun_fiyatlari = {"Seyahat Sağlık (Yurt Dışı)": 60, "Elektronik Cihaz (Telefon/Laptop)": 35, "Evcil Hayvan (Pati) Acil Durum": 25, "Kısa Süreli Kiralık Araç Kaskosu": 150}
         m_urun = st.selectbox("Koruma Altına Alınacak Konu:", list(urun_fiyatlari.keys()))
         m_gun = st.slider("Kaç Günlük Güvence İstiyorsunuz?", min_value=1, max_value=30, value=3)
-        m_detay = st.text_input("Gerekli Detay (Pasaport No, Cihaz IMEI, Çip No vb.)", placeholder="Örn: TR1234567")
-        
+        m_detay = st.text_input("Gerekli Detay (Pasaport No, Cihaz IMEI, Çip No vb.)")
     with m_col2:
         gunluk_fiyat = urun_fiyatlari[m_urun]
         toplam_fiyat = gunluk_fiyat * m_gun
-        
-        st.markdown(f"""
-        <div class="mikro-card">
-            <h4>Seçilen Paket: {m_urun}</h4>
-            <p>Süre: <b>{m_gun} Gün</b></p>
-            <h2 style="color: #d81b60;">Toplam: {toplam_fiyat} TL</h2>
-        </div>
-        """, unsafe_allow_html=True)
-        
+        st.markdown(f"""<div class="mikro-card"><h4>Seçilen Paket: {m_urun}</h4><p>Süre: <b>{m_gun} Gün</b></p><h2 style="color: #d81b60;">Toplam: {toplam_fiyat} TL</h2></div>""", unsafe_allow_html=True)
         if st.button("💳 Kredi Kartı İle Hemen Öde (Simülasyon)", type="primary", use_container_width=True):
             if m_detay and sh:
-                with st.spinner("Ödeme alınıyor ve poliçeniz saniyeler içinde oluşturuluyor..."):
+                with st.spinner("Ödeme alınıyor..."):
                     zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     teminat_ozeti = f"Sure: {m_gun} Gun\nKapsam Tipi: Kullan-At (On-Demand)\nDetay/ID: {m_detay}"
                     komisyon = komisyon_hesapla(toplam_fiyat, m_urun)
-                    
                     try:
-                        # Poliçeyi kaydet
-                        sh.worksheet("Üretilen Poliçeler").append_row([zaman, st.session_state.kullanici_adi, st.session_state.musteri_plaka, m_urun, teminat_ozeti, f"{toplam_fiyat} TL", "Self-Servis (Web)", f"{komisyon} TL"])
-                        
-                        # PDF'i oluşturup Evrak Kasasına kilitle
+                        sh.worksheet("Üretilen Poliçeler").append_row([zaman, st.session_state.kullanici_adi, st.session_state.musteri_plaka, m_urun, teminat_ozeti, f"{toplam_fiyat} TL", "Self-Servis", f"{komisyon} TL"])
                         pdf_bytes = pdf_olustur(st.session_state.kullanici_adi, st.session_state.musteri_plaka, m_urun, teminat_ozeti, f"{toplam_fiyat} TL")
                         dosya_adi = f"{st.session_state.musteri_plaka}_{datetime.now().strftime('%Y%m%d%H%M%S')}_MikroPolice.pdf"
                         dosya_yolu = os.path.join(EVRAK_KASASI_KLASORU, dosya_adi)
                         with open(dosya_yolu, "wb") as f: f.write(pdf_bytes)
                         sh.worksheet("Evrak Kasası").append_row([zaman, st.session_state.kullanici_adi, st.session_state.musteri_plaka, "Mikro Poliçe", dosya_adi, "Sistem"])
-                        
+                        log_action(st.session_state.kullanici_adi, "Musteri", "Self-Servis Mikro Sigorta Alımı", f"Ürün: {m_urun}, Tutar: {toplam_fiyat} TL")
                         st.success("✅ Ödeme başarılı! Poliçeniz oluşturuldu ve 🗄️ Evrak Kasanıza eklendi.")
-                    except Exception as e:
-                        st.error(f"Hata oluştu: {e}")
-            else:
-                st.warning("Lütfen Cihaz/Pasaport gibi gerekli detay bilgisini doldurun.")
+                    except Exception as e: st.error(f"Hata: {e}")
+            else: st.warning("Lütfen Cihaz/Pasaport gibi detayları doldurun.")
 
 elif sayfa == "🚗 Hasar Bildir & Takip Et" and st.session_state.rol == "Musteri":
     st.title("🚗 Hasar Bildirim ve Dosya Takip Merkezi")
@@ -551,17 +546,14 @@ elif sayfa == "🚗 Hasar Bildir & Takip Et" and st.session_state.rol == "Muster
                         st.write("**Hasar Raporu & AI Analizi:**")
                         st.info(h.get("Hasar Raporu", ""))
         except Exception as e: st.error("Hasar verileri çekilemedi.")
-    
     st.markdown("---")
     st.markdown("### ➕ Yeni Hasar Bildir (AI Suistimal Kontrollü)")
     st.info(f"**İşlem Yapılan Araç:** {st.session_state.musteri_plaka} | **Ruhsat Sahibi:** {st.session_state.kullanici_adi}")
-    h_beyan = st.text_area("Kaza nasıl gerçekleşti? (Kendi kelimelerinizle detaylıca anlatın)", placeholder="Örn: Kırmızı ışıkta beklerken arkadan gelen beyaz bir araç aracıma çarptı...")
+    h_beyan = st.text_area("Kaza nasıl gerçekleşti?", placeholder="Örn: Kırmızı ışıkta beklerken arkadan gelen beyaz bir araç aracıma çarptı...")
     h_gorseller = st.file_uploader("Kaza ve Tutanak Fotoğrafları Yükle", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
-    
     if h_gorseller:
         gorsel_sutunlari = st.columns(min(len(h_gorseller), 3))
         for idx, img in enumerate(h_gorseller[:3]): gorsel_sutunlari[idx].image(img, use_container_width=True)
-        
     if st.button("🔍 Hasar Raporunu Oluştur ve Acenteme Gönder", type="primary", use_container_width=True):
         if h_gorseller and h_beyan:
             with st.spinner("Yapay zeka fotoğraflarınızı beyanınızla çapraz sorguluyor..."):
@@ -570,6 +562,7 @@ elif sayfa == "🚗 Hasar Bildir & Takip Et" and st.session_state.rol == "Muster
                 st.info(analiz)
                 try: 
                     sh.worksheet("Hasar Kayıtları").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.session_state.kullanici_adi, st.session_state.musteri_plaka, analiz, "İnceleniyor"])
+                    log_action(st.session_state.kullanici_adi, "Musteri", "Yeni Hasar Bildirimi (Müşteri)", f"Plaka: {st.session_state.musteri_plaka}")
                     st.rerun()
                 except Exception as e: pass
         else: st.warning("Lütfen hem kaza senaryosunu yazın hem de en az bir fotoğraf yükleyin.")
@@ -641,6 +634,7 @@ elif sayfa == "📋 Kayıt & Ayıklama":
                         detay = st.session_state.son_ocr if st.session_state.son_ocr else "Manuel Kayıt"
                         sh.worksheet("Müşteri Portföyü").append_row([zaman, m_adi, m_tel, m_plaka, str(m_vade), detay])
                         st.success("Müşteri portföye eklendi!")
+                        log_action(st.session_state.kullanici_adi, st.session_state.rol, "Müşteri Kaydı Oluşturuldu", f"Müşteri: {m_adi}, Plaka: {m_plaka}")
                         st.session_state.son_kayit_isim = m_adi
                         st.session_state.son_kayit_plaka = m_plaka
                         st.session_state.son_kayit_tel = m_tel
@@ -651,7 +645,6 @@ elif sayfa == "📋 Kayıt & Ayıklama":
         if st.session_state.son_kayit_isim:
             st.markdown("---")
             st.markdown("### ⚖️ KVKK Aydınlatma ve Açık Rıza Onayı")
-            st.success(f"{st.session_state.son_kayit_isim} için sistem kaydı açıldı.")
             kvkk_pdf_data = kvkk_pdf_olustur(st.session_state.son_kayit_isim, st.session_state.son_kayit_plaka)
             c_kvkk1, c_kvkk2 = st.columns(2)
             with c_kvkk1:
@@ -753,6 +746,7 @@ elif sayfa == "📝 Poliçe Atölyesi":
                     try:
                         zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi, net_komisyon_yazisi])
+                        log_action(st.session_state.kullanici_adi, st.session_state.rol, "Poliçe Üretimi", f"Tipi: {p_tip}, Müşteri: {p_musteri}, Tutar: {prim_yazisi}")
                         try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_plaka, "", "Poliçe Atölyesi"])
                         except: pass
                         st.success("Poliçe kesildi!")
@@ -771,81 +765,48 @@ elif sayfa == "📝 Poliçe Atölyesi":
             wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={urllib.parse.quote(wp_mesaj)}" if p_tel else f"https://wa.me/?text={urllib.parse.quote(wp_mesaj)}"
             st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp Gönder ({secilen_dil})</div></a>', unsafe_allow_html=True)
 
-# YENİ MODÜL: MİKRO SİGORTA (PERSONEL/ADMİN TARAFINDAN HIZLI SATIŞ)
 elif sayfa == "⏱️ Mikro Sigorta (On-Demand)":
     st.title("⏱️ Anlık & Kısa Süreli Mikro Sigorta Satışı")
-    st.markdown("Müşterilere telefon veya stant üzerinden hızlıca kullan-at (Pay-As-You-Go) poliçe satın. Sürümden kazanın!")
     st.markdown("---")
-    
     m_col1, m_col2 = st.columns([1, 1], gap="large")
-    
     with m_col1:
         p_musteri = st.text_input("Müşteri Adı Soyadı")
         p_tc_plaka = st.text_input("T.C. No veya Plaka")
         p_tel = st.text_input("Telefon (WhatsApp İçin)")
-        
         st.markdown("---")
-        urun_fiyatlari = {
-            "Seyahat Sağlık (Yurt Dışı)": 60,
-            "Elektronik Cihaz (Telefon/Laptop)": 35,
-            "Evcil Hayvan (Pati) Acil Durum": 25,
-            "Kısa Süreli Kiralık Araç Kaskosu": 150
-        }
-        
+        urun_fiyatlari = {"Seyahat Sağlık (Yurt Dışı)": 60, "Elektronik Cihaz (Telefon/Laptop)": 35, "Evcil Hayvan (Pati) Acil Durum": 25, "Kısa Süreli Kiralık Araç Kaskosu": 150}
         m_urun = st.selectbox("Koruma Altına Alınacak Konu:", list(urun_fiyatlari.keys()))
         m_gun = st.slider("Kaç Günlük Güvence İstiyorsunuz?", min_value=1, max_value=30, value=3)
-        m_detay = st.text_input("Gerekli Detay (Pasaport No, Cihaz IMEI, Çip No vb.)", placeholder="Örn: TR1234567")
-        
+        m_detay = st.text_input("Gerekli Detay (Pasaport No, Cihaz IMEI vb.)")
     with m_col2:
         gunluk_fiyat = urun_fiyatlari[m_urun]
         toplam_fiyat = gunluk_fiyat * m_gun
         komisyon = komisyon_hesapla(toplam_fiyat, m_urun)
-        
-        st.markdown(f"""
-        <div class="mikro-card">
-            <h4>Seçilen Paket: {m_urun}</h4>
-            <p>Süre: <b>{m_gun} Gün</b></p>
-            <h2 style="color: #d81b60;">Toplam: {toplam_fiyat} TL</h2>
-            <p style="font-size: 0.9rem; color: #555;"><i>Grimset Net Komisyon (%25): +{komisyon} TL</i></p>
-        </div>
-        """, unsafe_allow_html=True)
-        
+        st.markdown(f"""<div class="mikro-card"><h4>Seçilen Paket: {m_urun}</h4><p>Süre: <b>{m_gun} Gün</b></p><h2 style="color: #d81b60;">Toplam: {toplam_fiyat} TL</h2><p style="font-size: 0.9rem; color: #555;"><i>Grimset Net Komisyon (%25): +{komisyon} TL</i></p></div>""", unsafe_allow_html=True)
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
             if st.button("💳 Tahsil Et & Sisteme İşle", type="primary", use_container_width=True):
                 if p_musteri and p_tc_plaka and m_detay and sh:
                     with st.spinner("Poliçe kaydediliyor..."):
                         zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        teminat_ozeti = f"Sure: {m_gun} Gun\nKapsam Tipi: Kullan-At (On-Demand)\nDetay/ID: {m_detay}"
+                        teminat_ozeti = f"Sure: {m_gun} Gun\nKapsam Tipi: Kullan-At\nDetay/ID: {m_detay}"
                         try:
                             sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_tc_plaka, m_urun, teminat_ozeti, f"{toplam_fiyat} TL", st.session_state.kullanici_adi, f"{komisyon} TL"])
-                            
                             pdf_bytes = pdf_olustur(p_musteri, p_tc_plaka, m_urun, teminat_ozeti, f"{toplam_fiyat} TL")
                             dosya_adi = f"{p_tc_plaka}_{datetime.now().strftime('%Y%m%d%H%M%S')}_MikroPolice.pdf"
                             dosya_yolu = os.path.join(EVRAK_KASASI_KLASORU, dosya_adi)
                             with open(dosya_yolu, "wb") as f: f.write(pdf_bytes)
                             sh.worksheet("Evrak Kasası").append_row([zaman, p_musteri, p_tc_plaka, "Mikro Poliçe", dosya_adi, st.session_state.kullanici_adi])
-                            
+                            log_action(st.session_state.kullanici_adi, st.session_state.rol, "Mikro Sigorta Satışı", f"Ürün: {m_urun}, Tutar: {toplam_fiyat} TL")
                             try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_tc_plaka, "", "Mikro Sigorta"])
                             except: pass
-                            
-                            st.success("✅ Poliçe kesildi ve müşterinin evrak kasasına arşivlendi!")
-                        except Exception as e:
-                            st.error(f"Hata oluştu: {e}")
-                else:
-                    st.warning("Müşteri adı, TC/Plaka ve IMEI/Pasaport detayı zorunludur.")
-        
+                            st.success("✅ Poliçe kesildi ve arşivlendi!")
+                        except Exception as e: st.error(f"Hata: {e}")
+                else: st.warning("Zorunlu alanları doldurun.")
         with col_btn2:
             if p_musteri and p_tc_plaka and m_detay:
-                teminat_ozeti = f"Sure: {m_gun} Gun\nKapsam Tipi: Kullan-At (On-Demand)\nDetay/ID: {m_detay}"
+                teminat_ozeti = f"Sure: {m_gun} Gun\nKapsam Tipi: Kullan-At\nDetay/ID: {m_detay}"
                 st.download_button("📄 PDF İndir", data=pdf_olustur(p_musteri, p_tc_plaka, m_urun, teminat_ozeti, f"{toplam_fiyat} TL"), file_name=f"Grimset_Mikro_{p_tc_plaka}.pdf", mime="application/pdf", use_container_width=True)
-
-        if p_musteri and p_tc_plaka and m_detay and p_tel:
-            st.markdown("---")
-            wp_mesaj = f"Sayın {p_musteri},\nGrimset Studio güvencesiyle {m_urun} poliçeniz başarıyla oluşturulmuştur.\n\nSüre: {m_gun} Gün\nToplam Tutar: {toplam_fiyat} TL\n\nPoliçenizin PDF haline 'Müşteri Portalı -> Evrak Kasam' menüsünden 7/24 ulaşabilirsiniz. İyi günler dileriz!"
-            wa_link = f"https://wa.me/90{str(p_tel).replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={urllib.parse.quote(wp_mesaj)}"
-            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 Bilgilendirmeyi WhatsApp\'tan Gönder</div></a>', unsafe_allow_html=True)
-
 
 elif sayfa == "🏥 Sağlık (TSS/ÖSS)":
     st.title("🏥 Sağlık Sigortası Yapay Zeka Fiyatlama Robotu")
@@ -903,6 +864,7 @@ elif sayfa == "🏥 Sağlık (TSS/ÖSS)":
                     try:
                         zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         sh.worksheet("Üretilen Poliçeler").append_row([zaman, s_musteri, s_tc_tel, s_tip, "Yapay Zeka Özel Sağlık Analizi Eklidir", f"{toplam_saglik_primi:,} TL", st.session_state.kullanici_adi, f"{net_saglik_komisyonu:,} TL"])
+                        log_action(st.session_state.kullanici_adi, st.session_state.rol, "Sağlık Poliçesi Üretimi", f"Tipi: {s_tip}, Müşteri: {s_musteri}")
                         try: sh.worksheet("Müşteri Portföyü").append_row([zaman, s_musteri, s_tel, s_tc_tel, "", f"Sağlık Profili: VKİ {vki}, Yaş {s_yas}"])
                         except: pass
                         st.success("Sağlık poliçesi sisteme işlendi!")
@@ -940,6 +902,7 @@ elif sayfa == "🏢 Kurumsal Filo (B2B)":
                         if sh:
                             try:
                                 sh.worksheet("Filo Teklifleri").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f_firma, arac_sayisi, ", ".join(plakalar), f_tip, f"{toplam_filo_primi:,} TL", st.session_state.kullanici_adi, f"{net_komisyon_filo:,} TL"])
+                                log_action(st.session_state.kullanici_adi, st.session_state.rol, "B2B Filo Satışı", f"Firma: {f_firma}, Araç Sayısı: {arac_sayisi}")
                                 st.success("B2B Filo teklifi kaydedildi!")
                             except Exception as e: st.error(f"Kayıt Hatası: {e}")
                 with col_btn2:
@@ -1019,10 +982,7 @@ elif sayfa == "📌 Satış Hunisi (Kanban)":
                     try:
                         policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
                         fiyatlar = set([str(p.get("Toplam Prim", "")) for p in policeler if "TL" in str(p.get("Toplam Prim", ""))])
-                        def parse_fiyat(f):
-                            try: return float(f.replace(" TL", "").replace(",", "").replace(".", ""))
-                            except: return 0
-                        gecmis_tutarlar.extend(sorted(list(fiyatlar), key=parse_fiyat))
+                        gecmis_tutarlar.extend(sorted(list(fiyatlar), key=temizle_fiyat))
                     except: pass
                     gecmis_tutarlar.append("Diğer (Manuel Gir)")
                     h_tutar_secim = st.selectbox("Tahmini Tutar", gecmis_tutarlar)
@@ -1033,6 +993,7 @@ elif sayfa == "📌 Satış Hunisi (Kanban)":
                             tarih = datetime.now().strftime("%Y-%m-%d")
                             final_tutar = h_tutar_manuel if h_tutar_secim == "Diğer (Manuel Gir)" else ("" if h_tutar_secim == "Belirtilmemiş" else h_tutar_secim)
                             ws_huni.append_row([zaman_id, tarih, h_isim, h_tel, h_konu, final_tutar, "Yeni Aday", st.session_state.kullanici_adi])
+                            log_action(st.session_state.kullanici_adi, st.session_state.rol, "Yeni Aday Eklendi (Kanban)", f"Aday: {h_isim}")
                             st.success(f"{h_isim} eklendi!")
                             st.rerun()
                         else: st.warning("İsim ve Ürün girin.")
@@ -1060,6 +1021,7 @@ elif sayfa == "📌 Satış Hunisi (Kanban)":
                             yeni_asama = st.selectbox("Durumu Güncelle", ["Yeni Aday", "Görüşülüyor", "Teklif Verildi", "Kazanıldı", "İptal Edildi"], index=secili_index, key=f"asama_{r_id}")
                             if yeni_asama != r_asama:
                                 ws_huni.update_cell(idx + 2, 7, yeni_asama)
+                                log_action(st.session_state.kullanici_adi, st.session_state.rol, "Kanban Güncellemesi", f"{r_isim} durumu değiştirildi: {r_asama} -> {yeni_asama}")
                                 st.rerun()
             else: st.info("Takip edilen fırsat yok.")
         except Exception as e: st.warning(f"Hata: {e}")
@@ -1092,6 +1054,7 @@ elif sayfa == "🚗 Hasar Asistanı & Süreç Yönetimi":
             if st.button("💾 Hasar Dosyasını Aç (Kaydet)"):
                 try:
                     sh.worksheet("Hasar Kayıtları").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), h_isim, h_plaka, st.session_state.son_kaza_analizi, "İnceleniyor"])
+                    log_action(st.session_state.kullanici_adi, st.session_state.rol, "Hasar Dosyası Açıldı", f"Plaka: {h_plaka}")
                     st.success("Dosya açıldı ve sisteme kaydedildi!")
                 except Exception as e: st.error(f"Hata: {e}")
 
@@ -1117,6 +1080,7 @@ elif sayfa == "🚗 Hasar Asistanı & Süreç Yönetimi":
                             yeni_durum = st.selectbox("Müşteri Portalında Görünecek Durumu Güncelle", secenekler, index=secili_index, key=f"hdurum_{gercek_idx}")
                             if yeni_durum != r_durum:
                                 ws_hasar.update_cell(gercek_idx + 1, 5, yeni_durum)
+                                log_action(st.session_state.kullanici_adi, st.session_state.rol, "Hasar Durumu Güncellendi", f"{r_plaka} durumu değiştirildi: {yeni_durum}")
                                 st.success("Durum güncellendi! Müşteri portalına yansıdı.")
                                 st.rerun()
             else:
@@ -1153,6 +1117,7 @@ elif sayfa == "🗄️ Dijital Evrak Kasası":
                                     dosya_kayit_yolu = os.path.join(EVRAK_KASASI_KLASORU, yeni_dosya_adi)
                                     with open(dosya_kayit_yolu, "wb") as f: f.write(yuklenen_evrak.getbuffer())
                                     sh.worksheet("Evrak Kasası").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), secilen_isim, secilen_plaka, evrak_tipi, yeni_dosya_adi, st.session_state.kullanici_adi])
+                                    log_action(st.session_state.kullanici_adi, st.session_state.rol, "Evrak Kasaya Eklendi", f"Tip: {evrak_tipi}, Müşteri: {secilen_plaka}")
                                     st.success(f"{evrak_tipi} dosyası kasaya başarıyla kilitlendi!")
                                     st.rerun()
                                 else: st.warning("Lütfen yüklenecek bir dosya seçin.")
@@ -1279,6 +1244,7 @@ elif sayfa == "💸 Gider Yönetimi" and st.session_state.rol == "Admin":
                     try:
                         zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         sh.worksheet("Şirket Giderleri").append_row([zaman, g_kalem, g_kategori, f"{g_tutar} TL", st.session_state.kullanici_adi])
+                        log_action(st.session_state.kullanici_adi, st.session_state.rol, "Yeni Gider Eklendi", f"Kalem: {g_kalem}, Tutar: {g_tutar}")
                         st.success("Gider başarıyla işlendi!")
                         st.rerun()
                     except Exception as e: st.error(f"Kayıt Hatası: {e}")
@@ -1401,3 +1367,20 @@ elif sayfa == "📊 Finansal & Coğrafi Dashboard" and st.session_state.rol == "
             st.subheader("Son Kesilen Poliçeler")
             st.dataframe(df[['Tarih', 'Satış Temsilcisi', 'Müşteri Adı', 'Poliçe Tipi', 'Toplam Prim', 'Net Komisyon']].tail(10).iloc[::-1], use_container_width=True)
         except Exception as e: st.warning(f"Hata: {e}")
+
+# YENİ EKLENEN: DENETİM İZİ (SADECE YÖNETİCİ GÖREBİLİR)
+elif sayfa == "🔐 Denetim İzi (Audit Log)" and st.session_state.rol == "Admin":
+    st.title("🔐 Kurumsal Denetim İzi ve Anti-Sabotaj Sistemi")
+    st.markdown("Şirket personelinin ve müşterilerin sistem içindeki tüm hareketlerini, saniyesi saniyesine buradan takip edebilirsiniz.")
+    st.markdown("---")
+    if sh:
+        try:
+            loglar = sh.worksheet("Audit Log").get_all_records()
+            if not loglar:
+                st.info("Henüz sistemde kaydedilmiş bir hareket bulunmuyor.")
+            else:
+                df_log = pd.DataFrame(loglar)
+                # En son yapılan işlemi en üstte göstermek için listeyi tersine çeviriyoruz
+                st.dataframe(df_log.iloc[::-1], use_container_width=True, height=600)
+        except Exception as e:
+            st.warning(f"Loglar yüklenirken bir hata oluştu: {e}")
