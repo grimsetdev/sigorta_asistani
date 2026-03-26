@@ -381,6 +381,50 @@ st.sidebar.markdown(f"**👤 Aktif Kullanıcı:** {st.session_state.kullanici_ad
 if st.sidebar.button("🚪 Çıkış Yap", use_container_width=True):
     st.session_state.giris_yapildi = False
     st.rerun()
+
+# --- YENİ EKLENEN: GÜNLÜK AKSİYON MERKEZİ (SADECE PERSONEL/ADMİN) ---
+if st.session_state.rol in ["Admin", "Satis"]:
+    st.sidebar.markdown("---")
+    with st.sidebar.expander("🔔 GÜNLÜK AKSİYON MERKEZİ", expanded=True):
+        if sh:
+            # Yaklaşan Vadeler
+            vade_sayisi = 0
+            try:
+                musteriler = sh.worksheet("Müşteri Portföyü").get_all_records()
+                bugun = datetime.now().date()
+                for m in musteriler:
+                    vade_str = str(m.get('Vade Tarihi', ''))
+                    if vade_str:
+                        try:
+                            v_date = datetime.strptime(vade_str, "%Y-%m-%d").date()
+                            if 0 <= (v_date - bugun).days <= 15:
+                                vade_sayisi += 1
+                        except: pass
+            except: pass
+            
+            # Açık Hasarlar
+            hasar_sayisi = 0
+            try:
+                hasarlar = sh.worksheet("Hasar Kayıtları").get_all_records()
+                for h in hasarlar:
+                    if str(h.get("Durum", "")) not in ["Tamamlandı", "İptal Edildi"]:
+                        hasar_sayisi += 1
+            except: pass
+            
+            # Bekleyen Kanban Fırsatları
+            firsat_sayisi = 0
+            try:
+                huni = sh.worksheet("Satış Hunisi").get_all_records()
+                for f in huni:
+                    if str(f.get("Aşama", "")) not in ["Kazanıldı", "İptal Edildi"]:
+                        firsat_sayisi += 1
+            except: pass
+            
+            st.markdown(f"**⏰ Yaklaşan Vadeler:** `{vade_sayisi} Kişi`")
+            st.markdown(f"**🚗 Açık Hasarlar:** `{hasar_sayisi} Dosya`")
+            st.markdown(f"**📌 Bekleyen Fırsat:** `{firsat_sayisi} İşlem`")
+            st.caption("Detaylar için ilgili modüllere gidin.")
+
 st.sidebar.markdown("---")
 
 if st.session_state.rol in ["Admin", "Satis"]:
@@ -541,7 +585,6 @@ elif sayfa == "📝 Poliçe Atölyesi":
     st.markdown("---")
     secilen_dil = st.radio("🌍 Müşteri İletişim Dili (PDF ve Mesaj Şablonu)", ["Türkçe", "English", "Deutsch", "Français"], horizontal=True)
     st.markdown("---")
-    
     col1, col2 = st.columns([1, 1], gap="large")
     with col1:
         p_musteri = st.text_input("Müşteri Adı Soyadı")
@@ -1019,7 +1062,6 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
             </div>
             """, unsafe_allow_html=True)
             
-            # --- YENİ EKLENEN KISIM: 🧠 AI SATIŞ KOÇU ---
             st.markdown("---")
             st.subheader("🧠 AI Satış & Performans Koçu (Kanban Analizi)")
             if st.button("Satış Ekibini ve Bekleyen Fırsatları Analiz Et", type="primary"):
@@ -1040,15 +1082,9 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
                                 toplam_bekleyen_tutar += tutar
                                 firsat_ozeti += f"- Müşteri: {f.get('Müşteri Adı')}, Aşama: {f.get('Aşama')}, Tutar: {tutar} TL, Sorumlu: {f.get('Sorumlu')}, Eklenme: {f.get('Tarih')}\n"
                             
-                            prompt = f"""Sen Grimset Studio'nun sert ama motive edici Satış Müdürüsün. Aşağıda Kanban panosunda bekleyen (Kazanıldı ya da İptal olmayan) açık müşteri fırsatları var. Masada bekleyen potansiyel ciro: {toplam_bekleyen_tutar} TL.
-Lütfen personelin performansını analiz et. Sorumlu kişilere (örneğin Ali'ye) ne yapmaları gerektiği konusunda kısa, net ve otoriter bir aksiyon planı çıkar. Hangi müşterilere acil dönülmesi gerektiğini isim vererek vurgula.
-Bekleyen İşler:
-{firsat_ozeti}"""
-                            analiz_sonucu = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
-                            st.info(analiz_sonucu)
-                    except Exception as e:
-                        st.error(f"Kanban verileri analiz edilirken hata oluştu: {e}")
-            # --- AI KOÇ SONU ---
+                            prompt = f"""Sen Grimset Studio'nun sert ama motive edici Satış Müdürüsün. Aşağıda Kanban panosunda bekleyen açık müşteri fırsatları var. Masada bekleyen potansiyel ciro: {toplam_bekleyen_tutar} TL. Lütfen personelin performansını analiz et ve aksiyon planı çıkar. Hangi müşterilere dönülmesi gerektiğini isim vererek vurgula.\n{firsat_ozeti}"""
+                            st.info(client.models.generate_content(model=TEXT_MODEL, contents=prompt).text)
+                    except Exception as e: st.error(f"Hata: {e}")
             
             st.markdown("---")
             col1, col2, col3 = st.columns(3)
