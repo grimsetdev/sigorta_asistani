@@ -101,6 +101,11 @@ def sheets_baglantisi_kur():
         except:
             ws_hasar = sh.add_worksheet(title="Hasar Kayıtları", rows="1000", cols="20")
             ws_hasar.append_row(["Tarih", "Müşteri Adı", "Plaka", "Hasar Raporu"])
+        # YENİ: Filo Teklifleri Sekmesi
+        try: ws_filo = sh.worksheet("Filo Teklifleri")
+        except:
+            ws_filo = sh.add_worksheet(title="Filo Teklifleri", rows="1000", cols="20")
+            ws_filo.append_row(["Tarih", "Firma Adı", "Araç Sayısı", "Plakalar", "Poliçe Tipi", "Toplam Prim", "Satış Temsilcisi"])
         return sh
     except Exception as e:
         st.error(f"Google Sheets Bağlantı Hatası: {e}")
@@ -138,8 +143,7 @@ def veritabani_yukle():
     return hafizayi_olustur_ve_kaydet()
 
 def coklu_belge_oku(gorsel_dosyalari):
-    prompt = """Sen analitik bir OCR asistanısın. Sana gönderilen tüm belgeleri analiz et. 
-SADECE aşağıdaki alanları tek bir temiz liste halinde ver. Okunamayan verileri boş bırak:
+    prompt = """Sen analitik bir OCR asistanısın. Sana gönderilen tüm belgeleri analiz et. SADECE aşağıdaki alanları tek bir temiz liste halinde ver. Okunamayan verileri boş bırak:
 - Müşteri Adı Soyadı:
 - T.C. Kimlik No:
 - Araç Plakası:
@@ -188,6 +192,31 @@ def pdf_olustur(musteri, plaka, tip, teminatlar, prim):
     pdf.cell(0, 10, f"Toplam Prim: {prim}", ln=True)
     return pdf.output(dest="S").encode("latin-1")
 
+# YENİ: FİLO İÇİN ÖZEL PDF OLUŞTURUCU
+def filo_pdf_olustur(firma, plaka_listesi, tip, prim):
+    pdf = FPDF()
+    pdf.add_page()
+    tr_map = str.maketrans("ğüşöçıİĞÜŞÖÇ", "gusociIGUSOC")
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "GRIMSET STUDIO - B2B KURUMSAL FILO TEKLIFI", ln=True, align="C")
+    pdf.ln(10)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(0, 10, f"Kurumsal Musteri (Firma): {firma.translate(tr_map)}", ln=True)
+    pdf.cell(0, 10, f"Police Tipi: {tip.translate(tr_map)}", ln=True)
+    pdf.cell(0, 10, f"Toplam Arac Sayisi: {len(plaka_listesi)} Adet", ln=True)
+    pdf.ln(5)
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 10, "Kapsamdaki Arac Plakalari:", ln=True)
+    pdf.set_font("Arial", "", 10)
+    
+    plaka_metni = ", ".join(plaka_listesi)
+    pdf.multi_cell(0, 10, plaka_metni.translate(tr_map))
+    
+    pdf.ln(10)
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 10, f"Uygulanan Filo Indirimi Sonrasi Toplam Prim: {prim:,} TL", ln=True)
+    return pdf.output(dest="S").encode("latin-1")
+
 def eposta_gonder(alici_mail, musteri_adi, plaka, tip, teminatlar, prim, pdf_bytes):
     gonderen_mail = st.secrets.get("SMTP_EMAIL")
     sifre = st.secrets.get("SMTP_PASSWORD")
@@ -221,7 +250,8 @@ if st.sidebar.button("🚪 Çıkış Yap", use_container_width=True):
 st.sidebar.markdown("---")
 st.sidebar.title("Modüller")
 
-menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🚗 Hasar Asistanı", "⚖️ Karşılaştırma"]
+# YENİ: "🏢 Kurumsal Filo (B2B)" sekmesi menüye eklendi
+menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏢 Kurumsal Filo (B2B)", "🚗 Hasar Asistanı", "⚖️ Karşılaştırma"]
 if st.session_state.rol == "Admin":
     menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "🕵️‍♂️ AI Müşteri Profilleme", "📊 Finansal Dashboard"])
 
@@ -290,7 +320,7 @@ if sayfa == "📋 Kayıt & Ayıklama":
                     st.session_state.mesajlar.append({"rol": "assistant", "icerik": response.text})
 
 elif sayfa == "📝 Poliçe Atölyesi":
-    st.title("📝 Poliçe Atölyesi (Üretim)")
+    st.title("📝 Poliçe Atölyesi (Perakende)")
     st.markdown("---")
     col1, col2 = st.columns([1, 1], gap="large")
     with col1:
@@ -331,18 +361,65 @@ elif sayfa == "📝 Poliçe Atölyesi":
         with col_btn2:
             if p_musteri and p_plaka:
                 st.download_button("📄 PDF İndir", data=pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi), file_name=f"Teklif_{p_plaka}.pdf", mime="application/pdf", use_container_width=True)
+
+# --- YENİ MODÜL: B2B KURUMSAL FİLO YÖNETİMİ ---
+elif sayfa == "🏢 Kurumsal Filo (B2B)":
+    st.title("🏢 Kurumsal Filo Yönetimi (B2B Teklif Motoru)")
+    st.markdown("Şirketlerden gelen toplu araç listelerine saniyeler içinde kasko ve trafik teklifi hazırlayın. Sistem araç sayısına göre **otomatik filo indirimi** uygular.")
+    st.markdown("---")
+    
+    f_col1, f_col2 = st.columns([1, 1], gap="large")
+    
+    with f_col1:
+        f_firma = st.text_input("Kurumsal Firma Adı", placeholder="Örn: ABC Lojistik A.Ş.")
+        f_tip = st.selectbox("Filo Sigorta Tipi", ["Filo Kasko", "Filo Zorunlu Trafik Sigortası"])
         
-        if p_musteri and p_plaka:
-            st.markdown("---")
-            wp_mesaj = urllib.parse.quote(f"Merhaba {p_musteri},\nGrimset Studio güvencesiyle {p_plaka} plakalı aracınız için {p_tip} teklifiniz hazırlanmıştır.\n\n*Tutar:* {prim_yazisi}")
-            wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={wp_mesaj}" if p_tel else f"https://wa.me/?text={wp_mesaj}"
-            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp\'tan Gönder</div></a>', unsafe_allow_html=True)
-            if p_mail:
-                if st.button("📧 E-Posta Gönder (PDF Ekli)", type="primary", use_container_width=True):
-                    with st.spinner("Mail gönderiliyor..."):
-                        basarili_mi, mesaj = eposta_gonder(p_mail, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi))
-                        if basarili_mi: st.success(mesaj)
-                        else: st.error(mesaj)
+        st.markdown("**Araç Plakalarını Girin**")
+        st.caption("Plakaları alt alta veya virgülle ayırarak yazabilirsiniz (Örn: 34ABC123, 06DEF456)")
+        f_plakalar_raw = st.text_area("Plaka Listesi", height=150)
+        
+    with f_col2:
+        if f_plakalar_raw and f_firma:
+            # Plakaları virgül veya yeni satıra göre bölüp temizle
+            plakalar = [p.strip().upper() for p in f_plakalar_raw.replace("\n", ",").split(",") if p.strip()]
+            arac_sayisi = len(plakalar)
+            
+            if arac_sayisi > 0:
+                # Fiyat Algoritması: Araç sayısı arttıkça indirim oranı artar
+                taban_fiyat = 20000 if f_tip == "Filo Kasko" else 8000
+                indirim_orani = min(arac_sayisi * 0.02, 0.30) # Maksimum %30 filo indirimi
+                
+                arac_basi_fiyat = int(taban_fiyat * (1 - indirim_orani))
+                toplam_filo_primi = arac_basi_fiyat * arac_sayisi
+                
+                st.success(f"**{arac_sayisi} Adet Araç Başarıyla Eşleştirildi!**")
+                st.info(f"Uygulanan Kurumsal Filo İndirimi: **%{int(indirim_orani*100)}**")
+                st.metric(label="Hesaplanan Toplam Filo Primi", value=f"{toplam_filo_primi:,} TL")
+                
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    if st.button("💾 Filo Teklifini Sisteme Kaydet", use_container_width=True, type="primary"):
+                        if sh:
+                            try:
+                                zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                plakalar_str = ", ".join(plakalar)
+                                sh.worksheet("Filo Teklifleri").append_row([zaman, f_firma, arac_sayisi, plakalar_str, f_tip, f"{toplam_filo_primi:,} TL", st.session_state.kullanici_adi])
+                                st.success("B2B Filo teklifi başarıyla Google Sheets'e kaydedildi!")
+                            except Exception as e:
+                                st.error(f"Kayıt Hatası: {e}")
+                
+                with col_btn2:
+                    st.download_button(
+                        label="📄 Kurumsal PDF İndir", 
+                        data=filo_pdf_olustur(f_firma, plakalar, f_tip, toplam_filo_primi), 
+                        file_name=f"Grimset_B2B_{f_firma.replace(' ', '_')}.pdf", 
+                        mime="application/pdf", 
+                        use_container_width=True
+                    )
+            else:
+                st.warning("Geçerli bir plaka bulunamadı.")
+        else:
+            st.info("Lütfen Firma Adını ve Plakaları girerek hesaplamayı başlatın.")
 
 elif sayfa == "🚗 Hasar Asistanı":
     st.title("🚗 Kaza ve Hasar Destek Asistanı")
@@ -457,7 +534,6 @@ elif sayfa == "🎯 Kampanya Motoru" and st.session_state.rol == "Admin":
                 else: st.warning("Plaka eşleşmesi yapılamadı.")
         except Exception as e: st.warning(f"Kampanya verileri yüklenirken hata oluştu: {e}")
 
-# --- YENİ MODÜL: AI MÜŞTERİ PROFİLLEME ---
 elif sayfa == "🕵️‍♂️ AI Müşteri Profilleme" and st.session_state.rol == "Admin":
     st.title("🕵️‍♂️ Yapay Zeka Müşteri Risk & Sadakat Profillemesi")
     st.markdown("Müşterilerinizin tüm geçmişini analiz edip, yapay zeka destekli aktüeryal risk ve sadakat puanlarını çıkarın.")
@@ -471,49 +547,26 @@ elif sayfa == "🕵️‍♂️ AI Müşteri Profilleme" and st.session_state.ro
             else:
                 df_police = pd.DataFrame(uretimler)
                 musteri_listesi = df_police['Müşteri Adı'].dropna().unique()
-                
                 if len(musteri_listesi) == 0:
                     st.info("Sistemde isim kayıtlı müşteri bulunamadı.")
                 else:
                     secilen_musteri = st.selectbox("Kapsamlı Analiz İçin Bir Müşteri Seçin:", musteri_listesi)
-                    
                     if st.button("🧠 Profili Çıkar ve Satış Stratejisi Belirle", type="primary", use_container_width=True):
                         with st.spinner("Gemini müşterinin tüm geçmişini inceliyor... Lütfen bekleyin."):
-                            # Seçilen müşterinin tüm geçmişini filtrele
                             m_data = df_police[df_police['Müşteri Adı'] == secilen_musteri]
-                            
                             policeler_str = ", ".join(m_data['Poliçe Tipi'].astype(str).tolist())
                             plakalar_str = ", ".join(m_data['Plaka'].astype(str).unique().tolist())
-                            
-                            # Toplam primi hesapla
-                            toplam_harcama = 0
-                            for index, row in m_data.iterrows():
-                                prim_str = str(row.get('Toplam Prim', '0')).replace(' TL', '').replace(',', '')
-                                if prim_str.isdigit():
-                                    toplam_harcama += int(prim_str)
-                            
+                            toplam_harcama = sum([int(str(row.get('Toplam Prim', '0')).replace(' TL', '').replace(',', '')) for index, row in m_data.iterrows() if str(row.get('Toplam Prim', '0')).replace(' TL', '').replace(',', '').isdigit()])
                             islem_sayisi = len(m_data)
                             
-                            prompt = f"""Sen Grimset Studio'nun elit sigorta aktüeri ve müşteri ilişkileri yöneticisisin. 
-Aşağıdaki müşteri verilerini incele:
-- Müşteri Adı: {secilen_musteri}
-- Sahip Olduğu Araçlar/Plakalar: {plakalar_str}
-- Bugüne Kadar Yaptırdığı İşlemler: {policeler_str}
-- Toplam İşlem Sayısı: {islem_sayisi}
-- Şirketimize Kazandırdığı Toplam Prim: {toplam_harcama} TL
-
-Lütfen bu veriler ışığında şu formatta net bir analiz yap:
-1. **Sadakat Puanı:** (100 üzerinden tahmini bir puan ve kısa bir neden)
-2. **Risk Puanı:** (100 üzerinden tahmini bir puan - riskli bir profil mi yoksa güvenilir mi?)
-3. **Profil Özeti:** Bu müşteri nasıl bir profile sahip? (Örn: Sadece zorunlu olduğu için sigorta yaptıran fiyat odaklı biri mi, yoksa kalite ve güvence odaklı sadık bir müşteri mi?)
-4. **VIP Satış Stratejisi:** Bu müşteriye sıradaki telefon görüşmesinde tam olarak ne söyleyerek yeni bir ürün satmalıyız? Direk kullanılacak ikna edici 2-3 cümle ver."""
+                            prompt = f"""Sen Grimset Studio'nun elit sigorta aktüerisin. Müşteri: {secilen_musteri}, Araçlar: {plakalar_str}, Yaptırdığı İşlemler: {policeler_str}, İşlem Sayısı: {islem_sayisi}, Şirkete Kazandırdığı Para: {toplam_harcama} TL.
+Lütfen: 1. Sadakat Puanı, 2. Risk Puanı, 3. Profil Özeti, 4. VIP Satış Stratejisi (2-3 cümle net teklif) çıkar."""
                             
                             try:
-                                analiz_sonucu = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
-                                st.success(f"**{secilen_musteri}** isimli müşteri için yapay zeka profillemesi tamamlandı!")
-                                st.info(analiz_sonucu)
+                                st.success(f"**{secilen_musteri}** için profilleme tamamlandı!")
+                                st.info(client.models.generate_content(model=TEXT_MODEL, contents=prompt).text)
                             except Exception as e:
-                                st.error(f"Analiz sırasında bir hata oluştu: {e}")
+                                st.error(f"Hata: {e}")
         except Exception as e:
             st.warning(f"Google Sheets verileri okunurken hata oluştu: {e}")
 
