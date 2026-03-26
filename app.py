@@ -3,7 +3,7 @@ import math
 import pickle
 import json
 import urllib.parse
-import smtplib # E-Posta gönderimi için
+import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -17,6 +17,7 @@ from PIL import Image
 from fpdf import FPDF
 import gspread
 from google.oauth2.service_account import Credentials
+from streamlit_mic_recorder import speech_to_text # YENİ: Sesli asistan kütüphanesi
 
 # --- Sayfa Ayarları ---
 st.set_page_config(page_title="Grimset AI | Sigorta Otomasyonu", page_icon="🛡️", layout="wide")
@@ -131,38 +132,19 @@ def pdf_olustur(musteri, plaka, tip, teminatlar, prim):
     pdf.cell(0, 10, f"Toplam Prim: {prim}", ln=True)
     return pdf.output(dest="S").encode("latin-1")
 
-# --- YENİ: E-POSTA GÖNDERME FONKSİYONU ---
 def eposta_gonder(alici_mail, musteri_adi, plaka, tip, teminatlar, prim, pdf_bytes):
     gonderen_mail = st.secrets.get("SMTP_EMAIL")
     sifre = st.secrets.get("SMTP_PASSWORD")
-    
-    if not gonderen_mail or not sifre:
-        return False, "E-Posta ayarları Secrets panelinde eksik!"
-        
+    if not gonderen_mail or not sifre: return False, "E-Posta ayarları eksik!"
     msg = MIMEMultipart()
     msg['From'] = f"Grimset Studio <{gonderen_mail}>"
     msg['To'] = alici_mail
     msg['Subject'] = f"{plaka} Plakalı Aracınız İçin {tip} Teklifiniz"
-    
-    body = f"""Merhaba {musteri_adi},
-    
-Grimset Studio güvencesiyle {plaka} plakalı aracınız için hazırlanan {tip} poliçe teklifiniz ekteki PDF dosyasında sunulmuştur.
-
-Özet Teminatlarınız:
-{teminatlar}
-
-Toplam Prim: {prim}
-
-Detaylı bilgi ve onay için bize dönüş yapabilirsiniz.
-İyi çalışmalar dileriz.
-"""
+    body = f"Merhaba {musteri_adi},\n\nGrimset Studio güvencesiyle {plaka} plakalı aracınız için hazırlanan {tip} poliçe teklifiniz ekteki PDF dosyasında sunulmuştur.\n\nÖzet Teminatlarınız:\n{teminatlar}\n\nToplam Prim: {prim}\n\nDetaylı bilgi ve onay için bize dönüş yapabilirsiniz.\nİyi çalışmalar dileriz."
     msg.attach(MIMEText(body, 'plain', 'utf-8'))
-    
-    # PDF'i bellekteki veriden e-postaya ekle
     part = MIMEApplication(pdf_bytes, Name=f"Grimset_Teklif_{plaka}.pdf")
     part['Content-Disposition'] = f'attachment; filename="Grimset_Teklif_{plaka}.pdf"'
     msg.attach(part)
-    
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -170,8 +152,7 @@ Detaylı bilgi ve onay için bize dönüş yapabilirsiniz.
         server.send_message(msg)
         server.quit()
         return True, "Teklif E-Postası başarıyla gönderildi!"
-    except Exception as e:
-        return False, f"Gönderim hatası: {e}"
+    except Exception as e: return False, f"Gönderim hatası: {e}"
 
 db = veritabani_yukle()
 
@@ -213,20 +194,30 @@ if sayfa == "📋 Kayıt & Ayıklama":
                             st.session_state.son_ocr = None
                         except Exception as e: st.error(f"Hata: {e}")
                     else: st.warning("Eksik bilgi veya bağlantı yok.")
+    
     with sag_panel:
-        st.subheader("🤖 Mevzuat Sohbeti")
+        st.subheader("🤖 Mevzuat Asistanı (Sesli & Yazılı)")
+        st.markdown("Mikrofon butonuna basarak konuşabilir veya alttaki kutuya yazabilirsiniz.")
+        
+        # YENİ: Sesli Asistan Butonu ve Mantığı
+        sesli_metin = speech_to_text(language='tr-TR', start_prompt="🎙️ Konuşmak İçin Tıkla", stop_prompt="🛑 Kaydı Durdur", use_container_width=True, just_once=True, key='STT')
+        yazili_metin = st.chat_input("Veya sorunuzu buraya yazın...")
+        
+        aktif_soru = sesli_metin if sesli_metin else yazili_metin
+
         if "mesajlar" not in st.session_state: st.session_state.mesajlar = []
         for mesaj in st.session_state.mesajlar:
             with st.chat_message(mesaj["rol"]): st.markdown(mesaj["icerik"])
-        if soru := st.chat_input("Sorunuz..."):
-            st.session_state.mesajlar.append({"rol": "user", "icerik": soru})
-            with st.chat_message("user"): st.markdown(soru)
+            
+        if aktif_soru:
+            st.session_state.mesajlar.append({"rol": "user", "icerik": aktif_soru})
+            with st.chat_message("user"): st.markdown(aktif_soru)
             with st.chat_message("assistant"):
-                with st.spinner("Taranıyor..."):
-                    soru_vektoru = metni_vektore_cevir(soru)
+                with st.spinner("Mevzuat taranıyor..."):
+                    soru_vektoru = metni_vektore_cevir(aktif_soru)
                     skorlar = sorted([(benzerlik_hesapla(soru_vektoru, i["vektor"]), i["metin"]) for i in db], reverse=True)
                     baglam = "\n---\n".join([m for s, m in skorlar[:5]])
-                    response = client.models.generate_content(model=TEXT_MODEL, contents=f"Bağlama göre cevapla:\n{baglam}\nSoru: {soru}")
+                    response = client.models.generate_content(model=TEXT_MODEL, contents=f"Bağlama göre cevapla:\n{baglam}\nSoru: {aktif_soru}")
                     st.markdown(response.text)
                     st.session_state.mesajlar.append({"rol": "assistant", "icerik": response.text})
 
@@ -237,7 +228,7 @@ elif sayfa == "📝 Poliçe Atölyesi":
     with col1:
         p_musteri = st.text_input("Müşteri Adı Soyadı")
         p_tel = st.text_input("Telefon (WhatsApp için)")
-        p_mail = st.text_input("Müşteri E-Posta Adresi (Mail Gönderimi İçin)") # YENİ ALAN
+        p_mail = st.text_input("Müşteri E-Posta Adresi")
         p_plaka = st.text_input("Araç Plakası")
         p_tip = st.selectbox("Poliçe Tipi", ["Kasko", "Zorunlu Trafik Sigortası", "DASK"])
         teminat_cam = st.checkbox("Sınırsız Orijinal Cam Değişimi", value=True)
@@ -263,21 +254,15 @@ elif sayfa == "📝 Poliçe Atölyesi":
         
         if p_musteri and p_plaka:
             st.markdown("---")
-            # WhatsApp Gönderim Butonu
             wp_mesaj = urllib.parse.quote(f"Merhaba {p_musteri},\nGrimset Studio güvencesiyle {p_plaka} plakalı aracınız için {p_tip} teklifiniz hazırlanmıştır.\n\n*Tutar:* {prim_yazisi}")
             wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={wp_mesaj}" if p_tel else f"https://wa.me/?text={wp_mesaj}"
             st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp\'tan Gönder</div></a>', unsafe_allow_html=True)
-            
-            # E-Posta Gönderim Butonu (YENİ)
             if p_mail:
                 if st.button("📧 Müşteriye E-Posta Gönder (PDF Ekli)", type="primary", use_container_width=True):
-                    with st.spinner("PDF oluşturuluyor ve mail gönderiliyor..."):
-                        pdf_verisi = pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi)
-                        basarili_mi, mesaj = eposta_gonder(p_mail, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, pdf_verisi)
-                        if basarili_mi:
-                            st.success(mesaj)
-                        else:
-                            st.error(mesaj)
+                    with st.spinner("Mail gönderiliyor..."):
+                        basarili_mi, mesaj = eposta_gonder(p_mail, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi))
+                        if basarili_mi: st.success(mesaj)
+                        else: st.error(mesaj)
 
 elif sayfa == "⚖️ Karşılaştırma":
     st.title("⚖️ Teklif Karşılaştırma Analizi")
@@ -315,14 +300,11 @@ elif sayfa == "📊 Finansal Dashboard":
             g_col1, g_col2 = st.columns(2)
             with g_col1:
                 st.subheader("Ürünlere Göre Ciro Dağılımı")
-                fig_pie = px.pie(df, names='Poliçe Tipi', values='Saf Prim', hole=0.4, color_discrete_sequence=px.colors.sequential.Teal)
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(px.pie(df, names='Poliçe Tipi', values='Saf Prim', hole=0.4, color_discrete_sequence=px.colors.sequential.Teal), use_container_width=True)
             with g_col2:
                 st.subheader("Poliçe Kesim Grafiği")
                 df['Kısa Tarih'] = pd.to_datetime(df['Tarih']).dt.date
-                gunluk_df = df.groupby('Kısa Tarih')['Saf Prim'].sum().reset_index()
-                fig_bar = px.bar(gunluk_df, x='Kısa Tarih', y='Saf Prim', text_auto='.2s', color_discrete_sequence=['#4CAF50'])
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.plotly_chart(px.bar(df.groupby('Kısa Tarih')['Saf Prim'].sum().reset_index(), x='Kısa Tarih', y='Saf Prim', text_auto='.2s', color_discrete_sequence=['#4CAF50']), use_container_width=True)
                 
             st.markdown("---")
             st.subheader("Son İşlemler Geçmişi")
