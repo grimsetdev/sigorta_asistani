@@ -17,7 +17,7 @@ from PIL import Image
 from fpdf import FPDF
 import gspread
 from google.oauth2.service_account import Credentials
-from streamlit_mic_recorder import speech_to_text # YENİ: Sesli asistan kütüphanesi
+from streamlit_mic_recorder import speech_to_text
 
 # --- Sayfa Ayarları ---
 st.set_page_config(page_title="Grimset AI | Sigorta Otomasyonu", page_icon="🛡️", layout="wide")
@@ -41,7 +41,6 @@ if not api_key:
 client = genai.Client(api_key=api_key)
 VISION_MODEL = 'gemini-2.5-flash'
 TEXT_MODEL = 'gemini-2.5-flash'
-
 HAFIZA_DOSYASI = "vektor_hafizasi.pkl"
 BELGELER_KLASORU = "belgeler"
 
@@ -159,7 +158,8 @@ db = veritabani_yukle()
 # --- YAN MENÜ ---
 st.sidebar.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=150)
 st.sidebar.title("Modüller")
-sayfa = st.sidebar.radio("İşlem Seçin:", ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "⚖️ Karşılaştırma", "📊 Finansal Dashboard"])
+# YENİ EKLENEN SEKME: Vade & Yenileme
+sayfa = st.sidebar.radio("İşlem Seçin:", ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "⚖️ Karşılaştırma", "⏰ Vade & Yenileme", "📊 Finansal Dashboard"])
 st.sidebar.markdown("---")
 st.sidebar.caption("Grimset Studio © 2026")
 
@@ -182,9 +182,9 @@ if sayfa == "📋 Kayıt & Ayıklama":
             st.text_area("Bilgiler", value=st.session_state.son_ocr, height=200)
             with st.form("crm_form"):
                 m_adi = st.text_input("Ad Soyad")
-                m_tel = st.text_input("Telefon")
+                m_tel = st.text_input("Telefon (5XX...)")
                 m_plaka = st.text_input("Plaka")
-                m_vade = st.date_input("Vade Tarihi")
+                m_vade = st.date_input("Poliçe Bitiş (Vade) Tarihi")
                 if st.form_submit_button("Google Sheets'e Kaydet"):
                     if m_adi and m_plaka and sh:
                         try:
@@ -198,11 +198,8 @@ if sayfa == "📋 Kayıt & Ayıklama":
     with sag_panel:
         st.subheader("🤖 Mevzuat Asistanı (Sesli & Yazılı)")
         st.markdown("Mikrofon butonuna basarak konuşabilir veya alttaki kutuya yazabilirsiniz.")
-        
-        # YENİ: Sesli Asistan Butonu ve Mantığı
         sesli_metin = speech_to_text(language='tr-TR', start_prompt="🎙️ Konuşmak İçin Tıkla", stop_prompt="🛑 Kaydı Durdur", use_container_width=True, just_once=True, key='STT')
         yazili_metin = st.chat_input("Veya sorunuzu buraya yazın...")
-        
         aktif_soru = sesli_metin if sesli_metin else yazili_metin
 
         if "mesajlar" not in st.session_state: st.session_state.mesajlar = []
@@ -222,6 +219,7 @@ if sayfa == "📋 Kayıt & Ayıklama":
                     st.session_state.mesajlar.append({"rol": "assistant", "icerik": response.text})
 
 elif sayfa == "📝 Poliçe Atölyesi":
+    # (Önceki Poliçe Atölyesi kodları aynı kalıyor, sadece yer tasarrufu için özet geçmedim, tam kod burada)
     st.title("📝 Poliçe Atölyesi (Üretim)")
     st.markdown("---")
     col1, col2 = st.columns([1, 1], gap="large")
@@ -275,6 +273,59 @@ elif sayfa == "⚖️ Karşılaştırma":
         if t2: st.image(t2)
     if t1 and t2:
         if st.button("Kıyasla"): st.markdown(teklif_karsilastir(t1, t2))
+
+# --- YENİ MODÜL: VADE VE YENİLEME OTOMASYONU ---
+elif sayfa == "⏰ Vade & Yenileme":
+    st.title("⏰ Akıllı Vade & Yenileme Panosu")
+    st.markdown("Poliçesinin bitmesine 15 günden az kalan veya vadesi geçen müşterileri buradan tek tıkla yakalayın.")
+    st.markdown("---")
+    
+    if sh:
+        try:
+            musteriler = sh.worksheet("Müşteri Portföyü").get_all_records()
+            if not musteriler:
+                st.info("Sistemde henüz kayıtlı müşteri bulunmuyor.")
+                st.stop()
+                
+            bugun = datetime.now().date()
+            yaklasanlar = []
+            
+            for m in musteriler:
+                vade_str = str(m.get('Vade Tarihi', ''))
+                if vade_str:
+                    try:
+                        vade_tarihi = datetime.strptime(vade_str, "%Y-%m-%d").date()
+                        kalan_gun = (vade_tarihi - bugun).days
+                        if kalan_gun <= 15: # Sadece 15 gün ve altı kalanları (veya geçenleri) filtrele
+                            m['kalan_gun'] = kalan_gun
+                            yaklasanlar.append(m)
+                    except:
+                        pass # Geçersiz tarih formatlarını atla
+            
+            if not yaklasanlar:
+                st.success("Harika! Yakın zamanda vadesi dolacak veya gecikmiş poliçe bulunmuyor. 🟢")
+            else:
+                # Kalan güne göre sırala (en aciller en üstte)
+                yaklasanlar.sort(key=lambda x: x['kalan_gun'])
+                
+                for y in yaklasanlar:
+                    k_gun = y['kalan_gun']
+                    durum_renk = "🔴 VADESİ GEÇTİ!" if k_gun < 0 else (f"🟠 SON {k_gun} GÜN!" if k_gun <= 5 else f"🟡 {k_gun} Gün Kaldı")
+                    
+                    with st.expander(f"{durum_renk} | {y.get('Müşteri Adı', '')} - Plaka: {y.get('Plaka', '')}"):
+                        st.write(f"**İletişim:** {y.get('Telefon', 'Belirtilmemiş')}")
+                        st.write(f"**Vade Tarihi:** {y.get('Vade Tarihi', '')}")
+                        
+                        tel = str(y.get('Telefon', ''))
+                        if tel:
+                            vade_mesaji = urllib.parse.quote(f"Merhaba {y.get('Müşteri Adı', '')} Bey/Hanım,\nGrimset Studio güvencesindeki {y.get('Plaka', '')} plakalı aracınızın sigorta vadesine çok az bir süre kalmıştır. Yeni dönem teklifinizi en uygun fiyatlarla hazırlamamız için lütfen bu mesaja dönüş yapınız.")
+                            wa_link = f"https://wa.me/90{tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={vade_mesaji}"
+                            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 8px; border-radius: 5px; font-weight: bold; margin-top: 10px;">💬 Otomatik Yenileme Mesajı At</div></a>', unsafe_allow_html=True)
+                        else:
+                            st.warning("Bu müşterinin telefon numarası kayıtlı olmadığı için WhatsApp butonu aktif değil.")
+                            
+        except Exception as e:
+            st.warning(f"Veriler çekilirken hata oluştu: {e}")
 
 elif sayfa == "📊 Finansal Dashboard":
     st.title("📊 Yönetici Finansal Dashboard")
