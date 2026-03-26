@@ -59,7 +59,7 @@ if not st.session_state.giris_yapildi:
             elif k_adi == "ali" and sifre == "satis123":
                 st.session_state.giris_yapildi = True
                 st.session_state.rol = "Satis"
-                st.session_state.kullanici_adi = "Ali (Satış)"
+                st.session_state.kullanici_adi = "Ali"
                 st.rerun()
             else:
                 st.error("Hatalı kullanıcı adı veya şifre!")
@@ -96,8 +96,8 @@ def sheets_baglantisi_kur():
         try: ws_police = sh.worksheet("Üretilen Poliçeler")
         except:
             ws_police = sh.add_worksheet(title="Üretilen Poliçeler", rows="1000", cols="20")
-            ws_police.append_row(["Tarih", "Müşteri Adı", "Plaka", "Poliçe Tipi", "Teminatlar", "Toplam Prim"])
-        # YENİ: Hasar Kayıtları Sekmesi
+            # YENİ: Satış Temsilcisi Sütunu Eklendi
+            ws_police.append_row(["Tarih", "Müşteri Adı", "Plaka", "Poliçe Tipi", "Teminatlar", "Toplam Prim", "Satış Temsilcisi"])
         try: ws_hasar = sh.worksheet("Hasar Kayıtları")
         except:
             ws_hasar = sh.add_worksheet(title="Hasar Kayıtları", rows="1000", cols="20")
@@ -140,28 +140,25 @@ def veritabani_yukle():
 
 def coklu_belge_oku(gorsel_dosyalari):
     prompt = """Sen analitik bir OCR asistanısın. Sana gönderilen tüm belgeleri analiz et. 
-Belgelerdeki bilgileri harmanlayarak SADECE aşağıdaki alanları tek bir temiz liste halinde ver. Okunamayan verileri boş bırak:
+SADECE aşağıdaki alanları tek bir temiz liste halinde ver. Okunamayan verileri boş bırak:
 - Müşteri Adı Soyadı:
 - T.C. Kimlik No:
 - Araç Plakası:
 - Şasi No (VIN):
 - Motor No:
 - Marka/Model/Yıl:
-- Mevcut Poliçe Bitiş Tarihi (Varsa):
-Asla yorum yapma."""
+- Mevcut Poliçe Bitiş Tarihi (Varsa):"""
     try:
         icerik_listesi = [prompt]
         for dosya in gorsel_dosyalari: icerik_listesi.append(Image.open(dosya))
         return client.models.generate_content(model=VISION_MODEL, contents=icerik_listesi).text
-    except Exception as e: return f"Görsel İşleme Hatası: {e}"
+    except Exception as e: return f"Hata: {e}"
 
-# YENİ: KAZA VE HASAR ANALİZ FONKSİYONU
 def kaza_analizi_yap(gorsel_dosyalari, plaka, isim):
-    prompt = f"""Sen Grimset Studio'nun uzman sigorta hasar danışmanı ve eksperisin. Müşterimiz {isim}'e ait {plaka} plakalı aracın kaza görselleri (ve varsa tutanak fotoğrafları) ektedir.
-Lütfen profesyonel bir dille şunları raporla:
-1. GÖRÜNÜR HASAR ANALİZİ: Araçta veya karşı araçta hangi parçalarda hasar mevcut? (Tampon, far, kaporta ezilmesi vb. detaylıca incele).
-2. KUSUR TAHMİNİ: Görsellerden anlaşıldığı kadarıyla kaza nasıl olmuş olabilir? Kusur durumu tahmini nedir?
-3. HASAR BEYAN DİLEKÇESİ: Sigorta şirketinin hasar departmanına sunulmak üzere, resmi bir dille yazılmış, olayı özetleyen ve hasar talebinde bulunan kısa bir beyan dilekçesi taslağı oluştur."""
+    prompt = f"""Sen Grimset Studio'nun uzman eksperisin. Müşterimiz {isim}'e ait {plaka} plakalı aracın kaza görselleri ektedir. Lütfen raporla:
+1. GÖRÜNÜR HASAR ANALİZİ
+2. KUSUR TAHMİNİ
+3. HASAR BEYAN DİLEKÇESİ (Resmi dille)"""
     try:
         icerik_listesi = [prompt]
         for dosya in gorsel_dosyalari: icerik_listesi.append(Image.open(dosya))
@@ -200,7 +197,7 @@ def eposta_gonder(alici_mail, musteri_adi, plaka, tip, teminatlar, prim, pdf_byt
     msg['From'] = f"Grimset Studio <{gonderen_mail}>"
     msg['To'] = alici_mail
     msg['Subject'] = f"{plaka} Plakalı Aracınız İçin {tip} Teklifiniz"
-    body = f"Merhaba {musteri_adi},\n\nGrimset Studio güvencesiyle {plaka} plakalı aracınız için hazırlanan {tip} poliçe teklifiniz ekteki PDF dosyasında sunulmuştur.\n\nÖzet Teminatlarınız:\n{teminatlar}\n\nToplam Prim: {prim}\n\nDetaylı bilgi ve onay için bize dönüş yapabilirsiniz.\nİyi çalışmalar dileriz."
+    body = f"Merhaba {musteri_adi},\n\nGrimset Studio güvencesiyle {plaka} plakalı aracınız için hazırlanan {tip} poliçe teklifiniz ekteki PDF dosyasında sunulmuştur.\n\nToplam Prim: {prim}\n\nİyi çalışmalar dileriz."
     msg.attach(MIMEText(body, 'plain', 'utf-8'))
     part = MIMEApplication(pdf_bytes, Name=f"Grimset_Teklif_{plaka}.pdf")
     part['Content-Disposition'] = f'attachment; filename="Grimset_Teklif_{plaka}.pdf"'
@@ -237,17 +234,13 @@ if sayfa == "📋 Kayıt & Ayıklama":
     sol_panel, sag_panel = st.columns([1, 2], gap="large")
     with sol_panel:
         st.title("🛡️ Çoklu Evrak Okuma")
-        st.markdown("Müşterinin Kimlik, Ruhsat ve Eski Poliçe fotoğraflarını aynı anda yükleyin.")
         st.markdown("---")
-        
         if "son_ocr" not in st.session_state: st.session_state.son_ocr = None
-        
         yuklenen_gorseller = st.file_uploader("Birden fazla belge seçebilirsiniz...", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
         if yuklenen_gorseller:
             gorsel_sutunlari = st.columns(len(yuklenen_gorseller))
             for idx, img in enumerate(yuklenen_gorseller):
                 gorsel_sutunlari[idx].image(img, use_container_width=True)
-                
             if st.button("Tüm Belgeleri Harmanla ve Ayıkla", use_container_width=True, type="primary"):
                 with st.spinner("Gemini belgeleri çapraz analiz ediyor..."):
                     ayiklanan = coklu_belge_oku(yuklenen_gorseller)
@@ -255,7 +248,6 @@ if sayfa == "📋 Kayıt & Ayıklama":
                         st.session_state.son_ocr = ayiklanan
                         st.success("Tüm belgeler harmanlandı!")
                     else: st.error(ayiklanan)
-                        
         if st.session_state.son_ocr:
             st.text_area("Çapraz Analiz Sonuçları", value=st.session_state.son_ocr, height=220)
             with st.form("crm_form"):
@@ -274,9 +266,8 @@ if sayfa == "📋 Kayıt & Ayıklama":
                     else: st.warning("Eksik bilgi veya bağlantı yok.")
     
     with sag_panel:
-        st.subheader("🤖 Mevzuat Asistanı (Sesli & Yazılı)")
-        st.markdown("Mikrofon butonuna basarak konuşabilir veya alttaki kutuya yazabilirsiniz.")
-        sesli_metin = speech_to_text(language='tr-TR', start_prompt="🎙️ Konuşmak İçin Tıkla", stop_prompt="🛑 Kaydı Durdur", use_container_width=True, just_once=True, key='STT')
+        st.subheader("🤖 Mevzuat Asistanı")
+        sesli_metin = speech_to_text(language='tr-TR', start_prompt="🎙️ Konuş", stop_prompt="🛑 Durdur", use_container_width=True, just_once=True, key='STT')
         yazili_metin = st.chat_input("Veya sorunuzu buraya yazın...")
         aktif_soru = sesli_metin if sesli_metin else yazili_metin
 
@@ -316,14 +307,11 @@ elif sayfa == "📝 Poliçe Atölyesi":
         teminat_ozeti = f"- Cam: {'Sınırsız' if teminat_cam else 'Muafiyetli'}\n- İkame: {teminat_ikame}\n- İMM: {teminat_imm}"
         
         st.markdown("---")
-        st.subheader("🧠 AI Çapraz Satış (Cross-Sell) Asistanı")
+        st.subheader("🧠 AI Çapraz Satış Asistanı")
         if st.button("💡 Müşteriye Özel Satış Tüyosu Üret"):
             with st.spinner("Gemini satış stratejisi kurguluyor..."):
-                prompt = f"""Sen Grimset Studio'nun elit sigorta satış koçusun. Müşteri '{p_tip}' poliçesi alıyor. Plakası: {p_plaka}. Teminatları: {teminat_ozeti}. 
-                Bu müşteriye gelirini artırmak için hangi ek sigorta ürününü (TSS, DASK, Konut vb.) satmalıyız? Satış temsilcisine 2-3 cümlelik harika, vurucu ve ikna edici bir cümle öner."""
-                try:
-                    cevap = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
-                    st.success(cevap)
+                prompt = f"""Sen elit satış koçusun. Müşteri '{p_tip}' poliçesi alıyor. Plakası: {p_plaka}. Bu müşteriye gelirini artırmak için hangi ek ürünü (TSS, DASK vb.) satmalıyız? Satış temsilcisine 2-3 cümlelik harika, ikna edici bir cümle öner."""
+                try: st.success(client.models.generate_content(model=TEXT_MODEL, contents=prompt).text)
                 except Exception as e: st.error("Asistan yanıt veremiyor.")
         st.markdown("---")
         
@@ -332,8 +320,9 @@ elif sayfa == "📝 Poliçe Atölyesi":
             if st.button("💾 Google Sheets'e Kaydet", use_container_width=True):
                 if p_musteri and p_plaka and sh:
                     try:
-                        sh.worksheet("Üretilen Poliçeler").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi])
-                        st.success("Kaydedildi!")
+                        # YENİ: Satış Temsilcisi bilgisini de ekleyerek kaydediyoruz!
+                        sh.worksheet("Üretilen Poliçeler").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi])
+                        st.success("Satış Temsilcisi etiketiyle kaydedildi!")
                     except Exception as e: st.error(f"Hata: {e}")
         with col_btn2:
             if p_musteri and p_plaka:
@@ -345,50 +334,38 @@ elif sayfa == "📝 Poliçe Atölyesi":
             wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={wp_mesaj}" if p_tel else f"https://wa.me/?text={wp_mesaj}"
             st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp\'tan Gönder</div></a>', unsafe_allow_html=True)
             if p_mail:
-                if st.button("📧 Müşteriye E-Posta Gönder (PDF Ekli)", type="primary", use_container_width=True):
+                if st.button("📧 E-Posta Gönder (PDF Ekli)", type="primary", use_container_width=True):
                     with st.spinner("Mail gönderiliyor..."):
                         basarili_mi, mesaj = eposta_gonder(p_mail, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi))
                         if basarili_mi: st.success(mesaj)
                         else: st.error(mesaj)
 
-# --- YENİ MODÜL: HASAR ASİSTANI ---
 elif sayfa == "🚗 Hasar Asistanı":
     st.title("🚗 Kaza ve Hasar Destek Asistanı")
-    st.markdown("Müşterinin kaza anında gönderdiği fotoğrafları ve tutanağı yükleyin, sistem hasar analizi yapsın ve resmi beyan dilekçesini yazsın.")
     st.markdown("---")
-    
     h_col1, h_col2 = st.columns([1, 2], gap="large")
     with h_col1:
         h_isim = st.text_input("Müşteri Adı Soyadı")
         h_plaka = st.text_input("Araç Plakası")
-        h_gorseller = st.file_uploader("Kaza ve Tutanak Fotoğrafları Yükle", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
-        
+        h_gorseller = st.file_uploader("Kaza ve Tutanak Fotoğrafları", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
         if h_gorseller:
             gorsel_sutunlari = st.columns(min(len(h_gorseller), 3))
-            for idx, img in enumerate(h_gorseller[:3]):
-                gorsel_sutunlari[idx].image(img, use_container_width=True)
-                
-        if st.button("🔍 Kaza Raporunu ve Hasarı Analiz Et", type="primary", use_container_width=True):
+            for idx, img in enumerate(h_gorseller[:3]): gorsel_sutunlari[idx].image(img, use_container_width=True)
+        if st.button("🔍 Hasarı Analiz Et", type="primary", use_container_width=True):
             if h_isim and h_plaka and h_gorseller:
-                with st.spinner("Gemini Kaza Analizi Yapıyor (Lütfen Bekleyin)..."):
-                    analiz_sonucu = kaza_analizi_yap(h_gorseller, h_plaka, h_isim)
-                    st.session_state.son_kaza_analizi = analiz_sonucu
-            else:
-                st.warning("Lütfen İsim, Plaka girin ve en az bir kaza fotoğrafı yükleyin.")
+                with st.spinner("Analiz Yapılıyor..."):
+                    st.session_state.son_kaza_analizi = kaza_analizi_yap(h_gorseller, h_plaka, h_isim)
+            else: st.warning("İsim, Plaka ve fotoğraf gerekli.")
 
     with h_col2:
         if "son_kaza_analizi" in st.session_state and st.session_state.son_kaza_analizi:
-            st.success("Hasar Analizi ve Dilekçe Başarıyla Oluşturuldu!")
-            st.markdown("### 📋 Analiz ve Resmi Beyan Raporu")
+            st.success("Rapor Başarıyla Oluşturuldu!")
             st.info(st.session_state.son_kaza_analizi)
-            
-            if st.button("💾 Raporu Google Sheets'e Kaydet"):
+            if st.button("💾 Google Sheets'e Kaydet"):
                 try:
-                    zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    sh.worksheet("Hasar Kayıtları").append_row([zaman, h_isim, h_plaka, st.session_state.son_kaza_analizi])
-                    st.success("Kaza Raporu Buluta Kaydedildi!")
-                except Exception as e:
-                    st.error(f"Kayıt Hatası: {e}")
+                    sh.worksheet("Hasar Kayıtları").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), h_isim, h_plaka, st.session_state.son_kaza_analizi])
+                    st.success("Kaydedildi!")
+                except Exception as e: st.error(f"Hata: {e}")
 
 elif sayfa == "⚖️ Karşılaştırma":
     st.title("⚖️ Teklif Karşılaştırma Analizi")
@@ -404,48 +381,37 @@ elif sayfa == "⚖️ Karşılaştırma":
 
 elif sayfa == "⏰ Vade & Yenileme" and st.session_state.rol == "Admin":
     st.title("⏰ Akıllı Vade & Yenileme Panosu")
-    st.markdown("Poliçesinin bitmesine 15 günden az kalan veya vadesi geçen müşterileri buradan tek tıkla yakalayın.")
     st.markdown("---")
     if sh:
         try:
             musteriler = sh.worksheet("Müşteri Portföyü").get_all_records()
-            if not musteriler:
-                st.info("Sistemde henüz kayıtlı müşteri bulunmuyor.")
-                st.stop()
-                
-            bugun = datetime.now().date()
-            yaklasanlar = []
-            for m in musteriler:
-                vade_str = str(m.get('Vade Tarihi', ''))
-                if vade_str:
-                    try:
-                        vade_tarihi = datetime.strptime(vade_str, "%Y-%m-%d").date()
-                        kalan_gun = (vade_tarihi - bugun).days
-                        if kalan_gun <= 15:
-                            m['kalan_gun'] = kalan_gun
-                            yaklasanlar.append(m)
-                    except: pass
-            
-            if not yaklasanlar:
-                st.success("Harika! Yakın zamanda vadesi dolacak veya gecikmiş poliçe bulunmuyor. 🟢")
-            else:
-                yaklasanlar.sort(key=lambda x: x['kalan_gun'])
-                for y in yaklasanlar:
-                    k_gun = y['kalan_gun']
-                    durum_renk = "🔴 VADESİ GEÇTİ!" if k_gun < 0 else (f"🟠 SON {k_gun} GÜN!" if k_gun <= 5 else f"🟡 {k_gun} Gün Kaldı")
-                    with st.expander(f"{durum_renk} | {y.get('Müşteri Adı', '')} - Plaka: {y.get('Plaka', '')}"):
-                        st.write(f"**İletişim:** {y.get('Telefon', 'Belirtilmemiş')} | **Vade Tarihi:** {y.get('Vade Tarihi', '')}")
-                        tel = str(y.get('Telefon', ''))
-                        if tel:
-                            vade_mesaji = urllib.parse.quote(f"Merhaba {y.get('Müşteri Adı', '')} Bey/Hanım,\nGrimset Studio güvencesindeki {y.get('Plaka', '')} plakalı aracınızın sigorta vadesine çok az bir süre kalmıştır. Yeni dönem teklifinizi en uygun fiyatlarla hazırlamamız için lütfen bu mesaja dönüş yapınız.")
-                            wa_link = f"https://wa.me/90{tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={vade_mesaji}"
-                            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 8px; border-radius: 5px; font-weight: bold; margin-top: 10px;">💬 Otomatik Yenileme Mesajı At</div></a>', unsafe_allow_html=True)
-                        else: st.warning("Bu müşterinin telefon numarası kayıtlı değil.")
-        except Exception as e: st.warning(f"Veriler çekilirken hata oluştu: {e}")
+            if musteriler:
+                bugun = datetime.now().date()
+                yaklasanlar = []
+                for m in musteriler:
+                    vade_str = str(m.get('Vade Tarihi', ''))
+                    if vade_str:
+                        try:
+                            vade_tarihi = datetime.strptime(vade_str, "%Y-%m-%d").date()
+                            kalan_gun = (vade_tarihi - bugun).days
+                            if kalan_gun <= 15:
+                                m['kalan_gun'] = kalan_gun
+                                yaklasanlar.append(m)
+                        except: pass
+                if yaklasanlar:
+                    yaklasanlar.sort(key=lambda x: x['kalan_gun'])
+                    for y in yaklasanlar:
+                        k_gun = y['kalan_gun']
+                        durum_renk = "🔴 GEÇTİ" if k_gun < 0 else f"🟡 {k_gun} Gün"
+                        with st.expander(f"{durum_renk} | {y.get('Müşteri Adı', '')} - Plaka: {y.get('Plaka', '')}"):
+                            st.write(f"Tel: {y.get('Telefon', '')} | Vade: {y.get('Vade Tarihi', '')}")
+                else: st.success("Süresi yaklaşan poliçe yok.")
+        except Exception as e: st.warning(f"Hata: {e}")
 
 elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
     st.title("📊 Yönetici Finansal Dashboard")
     st.markdown("---")
+    
     if sh:
         try:
             policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
@@ -455,7 +421,24 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
                 
             df = pd.DataFrame(policeler)
             df['Saf Prim'] = df['Toplam Prim'].astype(str).str.replace(' TL', '').str.replace(',', '').astype(float)
+            
+            # Eski verilerde satış temsilcisi yoksa "Bilinmiyor" yap
+            if 'Satış Temsilcisi' not in df.columns:
+                df['Satış Temsilcisi'] = 'Bilinmiyor'
+            df['Satış Temsilcisi'] = df['Satış Temsilcisi'].replace('', 'Bilinmiyor').fillna('Bilinmiyor')
+            
             toplam_ciro = df['Saf Prim'].sum()
+            
+            # YENİ EKLENTİ: LİDERLİK TABLOSU (GAMIFICATION)
+            st.subheader("🏆 Satış Ekibi Liderlik Tablosu")
+            satis_performansi = df.groupby('Satış Temsilcisi')['Saf Prim'].sum().reset_index()
+            satis_performansi = satis_performansi.sort_values(by='Saf Prim', ascending=False)
+            
+            # Satış Temsilcisi Grafiği
+            fig_lider = px.bar(satis_performansi, x='Satış Temsilcisi', y='Saf Prim', text_auto='.2s', color='Satış Temsilcisi', title="Kim Ne Kadar Sattı?")
+            st.plotly_chart(fig_lider, use_container_width=True)
+            
+            st.markdown("---")
             
             col1, col2, col3 = st.columns(3)
             col1.metric("💼 Toplam Kesilen Poliçe", f"{len(df)} Adet")
@@ -474,6 +457,7 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
                 
             st.markdown("---")
             st.subheader("Son İşlemler Geçmişi")
-            st.dataframe(df[['Tarih', 'Müşteri Adı', 'Plaka', 'Poliçe Tipi', 'Toplam Prim']].tail(10).iloc[::-1], use_container_width=True)
+            st.dataframe(df[['Tarih', 'Satış Temsilcisi', 'Müşteri Adı', 'Poliçe Tipi', 'Toplam Prim']].tail(10).iloc[::-1], use_container_width=True)
             
-        except Exception as e: st.warning(f"Dashboard yüklenirken hata oluştu: {e}")
+        except Exception as e:
+            st.warning(f"Dashboard yüklenirken hata oluştu: {e}")
