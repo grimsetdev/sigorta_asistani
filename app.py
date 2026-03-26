@@ -96,7 +96,6 @@ def sheets_baglantisi_kur():
         try: ws_police = sh.worksheet("Üretilen Poliçeler")
         except:
             ws_police = sh.add_worksheet(title="Üretilen Poliçeler", rows="1000", cols="20")
-            # YENİ: Satış Temsilcisi Sütunu Eklendi
             ws_police.append_row(["Tarih", "Müşteri Adı", "Plaka", "Poliçe Tipi", "Teminatlar", "Toplam Prim", "Satış Temsilcisi"])
         try: ws_hasar = sh.worksheet("Hasar Kayıtları")
         except:
@@ -224,7 +223,7 @@ st.sidebar.title("Modüller")
 
 menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🚗 Hasar Asistanı", "⚖️ Karşılaştırma"]
 if st.session_state.rol == "Admin":
-    menu_secenekleri.extend(["⏰ Vade & Yenileme", "📊 Finansal Dashboard"])
+    menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "📊 Finansal Dashboard"])
 
 sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 st.sidebar.markdown("---")
@@ -310,9 +309,9 @@ elif sayfa == "📝 Poliçe Atölyesi":
         st.subheader("🧠 AI Çapraz Satış Asistanı")
         if st.button("💡 Müşteriye Özel Satış Tüyosu Üret"):
             with st.spinner("Gemini satış stratejisi kurguluyor..."):
-                prompt = f"""Sen elit satış koçusun. Müşteri '{p_tip}' poliçesi alıyor. Plakası: {p_plaka}. Bu müşteriye gelirini artırmak için hangi ek ürünü (TSS, DASK vb.) satmalıyız? Satış temsilcisine 2-3 cümlelik harika, ikna edici bir cümle öner."""
+                prompt = f"""Sen elit satış koçusun. Müşteri '{p_tip}' poliçesi alıyor. Plakası: {p_plaka}. Bu müşteriye gelirini artırmak için hangi ek ürünü satmalıyız? İkna edici 2 cümle öner."""
                 try: st.success(client.models.generate_content(model=TEXT_MODEL, contents=prompt).text)
-                except Exception as e: st.error("Asistan yanıt veremiyor.")
+                except: st.error("Asistan yanıt veremiyor.")
         st.markdown("---")
         
         col_btn1, col_btn2 = st.columns(2)
@@ -320,7 +319,6 @@ elif sayfa == "📝 Poliçe Atölyesi":
             if st.button("💾 Google Sheets'e Kaydet", use_container_width=True):
                 if p_musteri and p_plaka and sh:
                     try:
-                        # YENİ: Satış Temsilcisi bilgisini de ekleyerek kaydediyoruz!
                         sh.worksheet("Üretilen Poliçeler").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi])
                         st.success("Satış Temsilcisi etiketiyle kaydedildi!")
                     except Exception as e: st.error(f"Hata: {e}")
@@ -408,6 +406,76 @@ elif sayfa == "⏰ Vade & Yenileme" and st.session_state.rol == "Admin":
                 else: st.success("Süresi yaklaşan poliçe yok.")
         except Exception as e: st.warning(f"Hata: {e}")
 
+# --- YENİ MODÜL: KAMPANYA MOTORU ---
+elif sayfa == "🎯 Kampanya Motoru" and st.session_state.rol == "Admin":
+    st.title("🎯 Toplu Filtreleme ve SMS/Mesaj Kampanya Motoru")
+    st.markdown("Mevcut veritabanınızı hedefleyerek özel çapraz satış kampanyaları oluşturun.")
+    st.markdown("---")
+    
+    if sh:
+        try:
+            uretimler = sh.worksheet("Üretilen Poliçeler").get_all_records()
+            musteriler_crm = sh.worksheet("Müşteri Portföyü").get_all_records()
+            
+            if not uretimler or not musteriler_crm:
+                st.warning("Kampanya yapmak için sistemde hem müşteri kaydı hem de kesilmiş poliçe bulunmalıdır.")
+            else:
+                # Telefon numaralarını Poliçelerle eşleştirmek için Pandas DataFrame kullanalım
+                df_police = pd.DataFrame(uretimler)
+                df_musteri = pd.DataFrame(musteriler_crm)
+                
+                # Sadece benzersiz müşteri isimlerini alıp telefonlarını eşleştir
+                # (Plakaya göre veya isme göre merge edilebilir, biz Plakayı baz alalım)
+                if 'Plaka' in df_police.columns and 'Plaka' in df_musteri.columns:
+                    df_hedef = pd.merge(df_police, df_musteri[['Plaka', 'Telefon']], on='Plaka', how='left')
+                    df_hedef = df_hedef.drop_duplicates(subset=['Plaka']) # Aynı plakaya mükerrer mesaj atılmasın
+                    
+                    st.subheader("1. Hedef Kitleyi Belirle")
+                    col_f1, col_f2 = st.columns(2)
+                    with col_f1:
+                        hedef_urun = st.selectbox("Hangi Poliçeye Sahip Olanları Hedefleyelim?", ["Tümü"] + list(df_hedef['Poliçe Tipi'].unique()))
+                    
+                    if hedef_urun != "Tümü":
+                        df_filtrelenmis = df_hedef[df_hedef['Poliçe Tipi'] == hedef_urun]
+                    else:
+                        df_filtrelenmis = df_hedef
+                        
+                    st.info(f"Filtreye uyan toplam müşteri sayısı: **{len(df_filtrelenmis)}**")
+                    
+                    if not df_filtrelenmis.empty:
+                        st.markdown("---")
+                        st.subheader("2. Kampanya Mesajını Hazırla")
+                        st.caption("Mesajın içinde {isim} veya {plaka} yazarak kişiye özel hale getirebilirsiniz.")
+                        
+                        varsayilan_mesaj = f"Merhaba {{isim}} Bey/Hanım,\nGrimset Studio olarak {{plaka}} plakalı aracınıza kestiğimiz {hedef_urun} poliçeniz dolayısıyla size özel Kasko indirim kampanyası tanımlanmıştır. Detaylar için bize ulaşın."
+                        kampanya_metni = st.text_area("Mesaj Metni", value=varsayilan_mesaj, height=150)
+                        
+                        st.markdown("---")
+                        st.subheader("3. Gönderimi Başlat")
+                        st.markdown("Aşağıdaki listeden müşterilere tek tıkla özelleştirilmiş WhatsApp mesajlarını gönderebilirsiniz.")
+                        
+                        for index, row in df_filtrelenmis.iterrows():
+                            isim = str(row.get('Müşteri Adı', 'Müşterimiz'))
+                            plaka = str(row.get('Plaka', 'Aracınız'))
+                            tel = str(row.get('Telefon', ''))
+                            
+                            ozel_mesaj = kampanya_metni.replace("{isim}", isim).replace("{plaka}", plaka)
+                            
+                            with st.expander(f"👤 {isim} | {plaka}"):
+                                st.write(f"**Önizleme:**\n{ozel_mesaj}")
+                                if tel and tel != 'nan':
+                                    wa_mesaj_kodlu = urllib.parse.quote(ozel_mesaj)
+                                    tel_temiz = tel.replace(' ', '').replace('+90', '').replace('0', '', 1)
+                                    wa_link = f"https://wa.me/90{tel_temiz}?text={wa_mesaj_kodlu}"
+                                    st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 5px; border-radius: 5px; font-weight: bold;">💬 Bu Müşteriye WhatsApp Gönder</div></a>', unsafe_allow_html=True)
+                                else:
+                                    st.error("Bu müşterinin kayıtlı telefon numarası yok.")
+                else:
+                    st.warning("Kayıtlarda plaka formatı uyuşmazlığı var.")
+                    
+        except Exception as e:
+            st.warning(f"Kampanya verileri yüklenirken hata oluştu: {e}")
+
 elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
     st.title("📊 Yönetici Finansal Dashboard")
     st.markdown("---")
@@ -422,19 +490,15 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
             df = pd.DataFrame(policeler)
             df['Saf Prim'] = df['Toplam Prim'].astype(str).str.replace(' TL', '').str.replace(',', '').astype(float)
             
-            # Eski verilerde satış temsilcisi yoksa "Bilinmiyor" yap
             if 'Satış Temsilcisi' not in df.columns:
                 df['Satış Temsilcisi'] = 'Bilinmiyor'
             df['Satış Temsilcisi'] = df['Satış Temsilcisi'].replace('', 'Bilinmiyor').fillna('Bilinmiyor')
             
             toplam_ciro = df['Saf Prim'].sum()
             
-            # YENİ EKLENTİ: LİDERLİK TABLOSU (GAMIFICATION)
             st.subheader("🏆 Satış Ekibi Liderlik Tablosu")
             satis_performansi = df.groupby('Satış Temsilcisi')['Saf Prim'].sum().reset_index()
             satis_performansi = satis_performansi.sort_values(by='Saf Prim', ascending=False)
-            
-            # Satış Temsilcisi Grafiği
             fig_lider = px.bar(satis_performansi, x='Satış Temsilcisi', y='Saf Prim', text_auto='.2s', color='Satış Temsilcisi', title="Kim Ne Kadar Sattı?")
             st.plotly_chart(fig_lider, use_container_width=True)
             
