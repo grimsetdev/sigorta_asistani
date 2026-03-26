@@ -18,6 +18,7 @@ from fpdf import FPDF
 import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_mic_recorder import speech_to_text
+from streamlit_tags import st_tags # YENİ: Etiket/Kalıp tasarımı için eklendi
 
 # --- Sayfa Ayarları ---
 st.set_page_config(page_title="Grimset AI | Sigorta Otomasyonu", page_icon="🛡️", layout="wide")
@@ -101,7 +102,6 @@ def sheets_baglantisi_kur():
         except:
             ws_hasar = sh.add_worksheet(title="Hasar Kayıtları", rows="1000", cols="20")
             ws_hasar.append_row(["Tarih", "Müşteri Adı", "Plaka", "Hasar Raporu"])
-        # YENİ: Filo Teklifleri Sekmesi
         try: ws_filo = sh.worksheet("Filo Teklifleri")
         except:
             ws_filo = sh.add_worksheet(title="Filo Teklifleri", rows="1000", cols="20")
@@ -143,7 +143,8 @@ def veritabani_yukle():
     return hafizayi_olustur_ve_kaydet()
 
 def coklu_belge_oku(gorsel_dosyalari):
-    prompt = """Sen analitik bir OCR asistanısın. Sana gönderilen tüm belgeleri analiz et. SADECE aşağıdaki alanları tek bir temiz liste halinde ver. Okunamayan verileri boş bırak:
+    prompt = """Sen analitik bir OCR asistanısın. Sana gönderilen tüm belgeleri analiz et. 
+SADECE aşağıdaki alanları tek bir temiz liste halinde ver. Okunamayan verileri boş bırak:
 - Müşteri Adı Soyadı:
 - T.C. Kimlik No:
 - Araç Plakası:
@@ -192,7 +193,6 @@ def pdf_olustur(musteri, plaka, tip, teminatlar, prim):
     pdf.cell(0, 10, f"Toplam Prim: {prim}", ln=True)
     return pdf.output(dest="S").encode("latin-1")
 
-# YENİ: FİLO İÇİN ÖZEL PDF OLUŞTURUCU
 def filo_pdf_olustur(firma, plaka_listesi, tip, prim):
     pdf = FPDF()
     pdf.add_page()
@@ -208,10 +208,8 @@ def filo_pdf_olustur(firma, plaka_listesi, tip, prim):
     pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 10, "Kapsamdaki Arac Plakalari:", ln=True)
     pdf.set_font("Arial", "", 10)
-    
     plaka_metni = ", ".join(plaka_listesi)
     pdf.multi_cell(0, 10, plaka_metni.translate(tr_map))
-    
     pdf.ln(10)
     pdf.set_font("Arial", "B", 14)
     pdf.cell(0, 10, f"Uygulanan Filo Indirimi Sonrasi Toplam Prim: {prim:,} TL", ln=True)
@@ -250,7 +248,6 @@ if st.sidebar.button("🚪 Çıkış Yap", use_container_width=True):
 st.sidebar.markdown("---")
 st.sidebar.title("Modüller")
 
-# YENİ: "🏢 Kurumsal Filo (B2B)" sekmesi menüye eklendi
 menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏢 Kurumsal Filo (B2B)", "🚗 Hasar Asistanı", "⚖️ Karşılaştırma"]
 if st.session_state.rol == "Admin":
     menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "🕵️‍♂️ AI Müşteri Profilleme", "📊 Finansal Dashboard"])
@@ -362,10 +359,10 @@ elif sayfa == "📝 Poliçe Atölyesi":
             if p_musteri and p_plaka:
                 st.download_button("📄 PDF İndir", data=pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi), file_name=f"Teklif_{p_plaka}.pdf", mime="application/pdf", use_container_width=True)
 
-# --- YENİ MODÜL: B2B KURUMSAL FİLO YÖNETİMİ ---
+# --- YENİ MODÜL: B2B KURUMSAL FİLO YÖNETİMİ (ETİKETLİ) ---
 elif sayfa == "🏢 Kurumsal Filo (B2B)":
     st.title("🏢 Kurumsal Filo Yönetimi (B2B Teklif Motoru)")
-    st.markdown("Şirketlerden gelen toplu araç listelerine saniyeler içinde kasko ve trafik teklifi hazırlayın. Sistem araç sayısına göre **otomatik filo indirimi** uygular.")
+    st.markdown("Şirketlerden gelen toplu araç listelerine saniyeler içinde kasko ve trafik teklifi hazırlayın.")
     st.markdown("---")
     
     f_col1, f_col2 = st.columns([1, 1], gap="large")
@@ -374,21 +371,27 @@ elif sayfa == "🏢 Kurumsal Filo (B2B)":
         f_firma = st.text_input("Kurumsal Firma Adı", placeholder="Örn: ABC Lojistik A.Ş.")
         f_tip = st.selectbox("Filo Sigorta Tipi", ["Filo Kasko", "Filo Zorunlu Trafik Sigortası"])
         
-        st.markdown("**Araç Plakalarını Girin**")
-        st.caption("Plakaları alt alta veya virgülle ayırarak yazabilirsiniz (Örn: 34ABC123, 06DEF456)")
-        f_plakalar_raw = st.text_area("Plaka Listesi", height=150)
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # YENİ: Etiket/Kalıp şeklinde plaka girişi
+        girilen_plakalar = st_tags(
+            label='**Araç Plakalarını Girin**',
+            text='Plakayı yazıp Enter tuşuna basın',
+            value=[],
+            suggestions=['34ABC123', '06DEF456'],
+            maxtags=-1,
+            key='filo_plakalar'
+        )
         
     with f_col2:
-        if f_plakalar_raw and f_firma:
-            # Plakaları virgül veya yeni satıra göre bölüp temizle
-            plakalar = [p.strip().upper() for p in f_plakalar_raw.replace("\n", ",").split(",") if p.strip()]
+        if f_firma and girilen_plakalar:
+            # Girilen etiketleri otomatik olarak büyük harfe çevirip boşlukları temizle
+            plakalar = [p.strip().upper() for p in girilen_plakalar if p.strip()]
             arac_sayisi = len(plakalar)
             
             if arac_sayisi > 0:
-                # Fiyat Algoritması: Araç sayısı arttıkça indirim oranı artar
                 taban_fiyat = 20000 if f_tip == "Filo Kasko" else 8000
-                indirim_orani = min(arac_sayisi * 0.02, 0.30) # Maksimum %30 filo indirimi
-                
+                indirim_orani = min(arac_sayisi * 0.02, 0.30)
                 arac_basi_fiyat = int(taban_fiyat * (1 - indirim_orani))
                 toplam_filo_primi = arac_basi_fiyat * arac_sayisi
                 
@@ -404,7 +407,7 @@ elif sayfa == "🏢 Kurumsal Filo (B2B)":
                                 zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                 plakalar_str = ", ".join(plakalar)
                                 sh.worksheet("Filo Teklifleri").append_row([zaman, f_firma, arac_sayisi, plakalar_str, f_tip, f"{toplam_filo_primi:,} TL", st.session_state.kullanici_adi])
-                                st.success("B2B Filo teklifi başarıyla Google Sheets'e kaydedildi!")
+                                st.success("B2B Filo teklifi Google Sheets'e kaydedildi!")
                             except Exception as e:
                                 st.error(f"Kayıt Hatası: {e}")
                 
@@ -417,9 +420,9 @@ elif sayfa == "🏢 Kurumsal Filo (B2B)":
                         use_container_width=True
                     )
             else:
-                st.warning("Geçerli bir plaka bulunamadı.")
+                st.warning("Lütfen en az bir geçerli plaka girin.")
         else:
-            st.info("Lütfen Firma Adını ve Plakaları girerek hesaplamayı başlatın.")
+            st.info("Lütfen Firma Adını girin ve plakaları etiket olarak ekleyin.")
 
 elif sayfa == "🚗 Hasar Asistanı":
     st.title("🚗 Kaza ve Hasar Destek Asistanı")
@@ -536,9 +539,7 @@ elif sayfa == "🎯 Kampanya Motoru" and st.session_state.rol == "Admin":
 
 elif sayfa == "🕵️‍♂️ AI Müşteri Profilleme" and st.session_state.rol == "Admin":
     st.title("🕵️‍♂️ Yapay Zeka Müşteri Risk & Sadakat Profillemesi")
-    st.markdown("Müşterilerinizin tüm geçmişini analiz edip, yapay zeka destekli aktüeryal risk ve sadakat puanlarını çıkarın.")
     st.markdown("---")
-    
     if sh:
         try:
             uretimler = sh.worksheet("Üretilen Poliçeler").get_all_records()
