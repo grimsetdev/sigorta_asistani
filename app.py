@@ -223,7 +223,7 @@ st.sidebar.title("Modüller")
 
 menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🚗 Hasar Asistanı", "⚖️ Karşılaştırma"]
 if st.session_state.rol == "Admin":
-    menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "📊 Finansal Dashboard"])
+    menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "🕵️‍♂️ AI Müşteri Profilleme", "📊 Finansal Dashboard"])
 
 sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 st.sidebar.markdown("---")
@@ -250,7 +250,6 @@ if sayfa == "📋 Kayıt & Ayıklama":
         if st.session_state.son_ocr:
             st.text_area("Çapraz Analiz Sonuçları", value=st.session_state.son_ocr, height=220)
             
-        # DÜZELTME 1: Form artık if döngüsünün dışında, böylece belgesiz de manuel kayıt yapılabilir!
         st.markdown("### 📝 Müşteri Kayıt Formu")
         with st.form("crm_form"):
             m_adi = st.text_input("Ad Soyad")
@@ -324,16 +323,10 @@ elif sayfa == "📝 Poliçe Atölyesi":
                 if p_musteri and p_plaka and sh:
                     try:
                         zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        
-                        # Poliçe sekmesine kaydet
                         sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi])
-                        
-                        # DÜZELTME 2: Müşteriyi otomatik olarak Portföye de ekle (Kampanya Motoru için Telefon bilgisini saklar)
-                        try:
-                            sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_plaka, "", "Poliçe Atölyesinden Otomatik Eklendi"])
+                        try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_plaka, "", "Poliçe Atölyesinden Eklendi"])
                         except: pass
-                        
-                        st.success("Poliçe başarıyla kesildi ve müşteri portföye işlendi!")
+                        st.success("Poliçe kesildi ve portföye işlendi!")
                     except Exception as e: st.error(f"Hata: {e}")
         with col_btn2:
             if p_musteri and p_plaka:
@@ -422,45 +415,36 @@ elif sayfa == "⏰ Vade & Yenileme" and st.session_state.rol == "Admin":
 elif sayfa == "🎯 Kampanya Motoru" and st.session_state.rol == "Admin":
     st.title("🎯 Toplu Filtreleme ve SMS/Mesaj Kampanya Motoru")
     st.markdown("---")
-    
     if sh:
         try:
             uretimler = sh.worksheet("Üretilen Poliçeler").get_all_records()
             musteriler_crm = sh.worksheet("Müşteri Portföyü").get_all_records()
-            
             if not uretimler or not musteriler_crm:
                 st.warning("Kampanya yapmak için sistemde hem müşteri kaydı hem de kesilmiş poliçe bulunmalıdır.")
             else:
                 df_police = pd.DataFrame(uretimler)
                 df_musteri = pd.DataFrame(musteriler_crm)
-                
                 if 'Plaka' in df_police.columns and 'Plaka' in df_musteri.columns:
                     df_hedef = pd.merge(df_police, df_musteri[['Plaka', 'Telefon']], on='Plaka', how='left')
                     df_hedef = df_hedef.drop_duplicates(subset=['Plaka'])
-                    
                     st.subheader("1. Hedef Kitleyi Belirle")
                     col_f1, col_f2 = st.columns(2)
                     with col_f1:
                         hedef_urun = st.selectbox("Hangi Poliçeye Sahip Olanları Hedefleyelim?", ["Tümü"] + list(df_hedef['Poliçe Tipi'].unique()))
-                    
                     if hedef_urun != "Tümü": df_filtrelenmis = df_hedef[df_hedef['Poliçe Tipi'] == hedef_urun]
                     else: df_filtrelenmis = df_hedef
-                        
                     st.info(f"Filtreye uyan toplam müşteri sayısı: **{len(df_filtrelenmis)}**")
-                    
                     if not df_filtrelenmis.empty:
                         st.markdown("---")
                         st.subheader("2. Kampanya Mesajını Hazırla")
                         varsayilan_mesaj = f"Merhaba {{isim}} Bey/Hanım,\nGrimset Studio olarak {{plaka}} plakalı aracınıza kestiğimiz {hedef_urun} poliçeniz dolayısıyla size özel indirim tanımlanmıştır."
                         kampanya_metni = st.text_area("Mesaj Metni", value=varsayilan_mesaj, height=150)
-                        
                         st.markdown("---")
                         st.subheader("3. Gönderimi Başlat")
                         for index, row in df_filtrelenmis.iterrows():
                             isim = str(row.get('Müşteri Adı', 'Müşterimiz'))
                             plaka = str(row.get('Plaka', 'Aracınız'))
                             tel = str(row.get('Telefon', ''))
-                            
                             ozel_mesaj = kampanya_metni.replace("{isim}", isim).replace("{plaka}", plaka)
                             with st.expander(f"👤 {isim} | {plaka}"):
                                 st.write(f"**Önizleme:**\n{ozel_mesaj}")
@@ -472,6 +456,66 @@ elif sayfa == "🎯 Kampanya Motoru" and st.session_state.rol == "Admin":
                                 else: st.error("Bu müşterinin telefon numarası yok.")
                 else: st.warning("Plaka eşleşmesi yapılamadı.")
         except Exception as e: st.warning(f"Kampanya verileri yüklenirken hata oluştu: {e}")
+
+# --- YENİ MODÜL: AI MÜŞTERİ PROFİLLEME ---
+elif sayfa == "🕵️‍♂️ AI Müşteri Profilleme" and st.session_state.rol == "Admin":
+    st.title("🕵️‍♂️ Yapay Zeka Müşteri Risk & Sadakat Profillemesi")
+    st.markdown("Müşterilerinizin tüm geçmişini analiz edip, yapay zeka destekli aktüeryal risk ve sadakat puanlarını çıkarın.")
+    st.markdown("---")
+    
+    if sh:
+        try:
+            uretimler = sh.worksheet("Üretilen Poliçeler").get_all_records()
+            if not uretimler:
+                st.warning("Analiz edilecek poliçe verisi bulunmuyor.")
+            else:
+                df_police = pd.DataFrame(uretimler)
+                musteri_listesi = df_police['Müşteri Adı'].dropna().unique()
+                
+                if len(musteri_listesi) == 0:
+                    st.info("Sistemde isim kayıtlı müşteri bulunamadı.")
+                else:
+                    secilen_musteri = st.selectbox("Kapsamlı Analiz İçin Bir Müşteri Seçin:", musteri_listesi)
+                    
+                    if st.button("🧠 Profili Çıkar ve Satış Stratejisi Belirle", type="primary", use_container_width=True):
+                        with st.spinner("Gemini müşterinin tüm geçmişini inceliyor... Lütfen bekleyin."):
+                            # Seçilen müşterinin tüm geçmişini filtrele
+                            m_data = df_police[df_police['Müşteri Adı'] == secilen_musteri]
+                            
+                            policeler_str = ", ".join(m_data['Poliçe Tipi'].astype(str).tolist())
+                            plakalar_str = ", ".join(m_data['Plaka'].astype(str).unique().tolist())
+                            
+                            # Toplam primi hesapla
+                            toplam_harcama = 0
+                            for index, row in m_data.iterrows():
+                                prim_str = str(row.get('Toplam Prim', '0')).replace(' TL', '').replace(',', '')
+                                if prim_str.isdigit():
+                                    toplam_harcama += int(prim_str)
+                            
+                            islem_sayisi = len(m_data)
+                            
+                            prompt = f"""Sen Grimset Studio'nun elit sigorta aktüeri ve müşteri ilişkileri yöneticisisin. 
+Aşağıdaki müşteri verilerini incele:
+- Müşteri Adı: {secilen_musteri}
+- Sahip Olduğu Araçlar/Plakalar: {plakalar_str}
+- Bugüne Kadar Yaptırdığı İşlemler: {policeler_str}
+- Toplam İşlem Sayısı: {islem_sayisi}
+- Şirketimize Kazandırdığı Toplam Prim: {toplam_harcama} TL
+
+Lütfen bu veriler ışığında şu formatta net bir analiz yap:
+1. **Sadakat Puanı:** (100 üzerinden tahmini bir puan ve kısa bir neden)
+2. **Risk Puanı:** (100 üzerinden tahmini bir puan - riskli bir profil mi yoksa güvenilir mi?)
+3. **Profil Özeti:** Bu müşteri nasıl bir profile sahip? (Örn: Sadece zorunlu olduğu için sigorta yaptıran fiyat odaklı biri mi, yoksa kalite ve güvence odaklı sadık bir müşteri mi?)
+4. **VIP Satış Stratejisi:** Bu müşteriye sıradaki telefon görüşmesinde tam olarak ne söyleyerek yeni bir ürün satmalıyız? Direk kullanılacak ikna edici 2-3 cümle ver."""
+                            
+                            try:
+                                analiz_sonucu = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                                st.success(f"**{secilen_musteri}** isimli müşteri için yapay zeka profillemesi tamamlandı!")
+                                st.info(analiz_sonucu)
+                            except Exception as e:
+                                st.error(f"Analiz sırasında bir hata oluştu: {e}")
+        except Exception as e:
+            st.warning(f"Google Sheets verileri okunurken hata oluştu: {e}")
 
 elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
     st.title("📊 Yönetici Finansal Dashboard")
