@@ -7,3 +7,4 @@ gspread
 pandas
 plotly
 streamlit-mic-recorder
+streamlit-tags
