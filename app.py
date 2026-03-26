@@ -64,7 +64,6 @@ def sheets_baglantisi_kur():
         try: ws_police = sh.worksheet("Üretilen Poliçeler")
         except:
             ws_police = sh.add_worksheet(title="Üretilen Poliçeler", rows="1000", cols="20")
-            # YENİ: Net Komisyon Sütunu
             ws_police.append_row(["Tarih", "Müşteri Adı", "Plaka", "Poliçe Tipi", "Teminatlar", "Toplam Prim", "Satış Temsilcisi", "Net Komisyon"])
         try: ws_hasar = sh.worksheet("Hasar Kayıtları")
         except:
@@ -74,6 +73,11 @@ def sheets_baglantisi_kur():
         except:
             ws_filo = sh.add_worksheet(title="Filo Teklifleri", rows="1000", cols="20")
             ws_filo.append_row(["Tarih", "Firma Adı", "Araç Sayısı", "Plakalar", "Poliçe Tipi", "Toplam Prim", "Satış Temsilcisi", "Net Komisyon"])
+        # YENİ: Satış Hunisi (Kanban) Sekmesi
+        try: ws_huni = sh.worksheet("Satış Hunisi")
+        except:
+            ws_huni = sh.add_worksheet(title="Satış Hunisi", rows="1000", cols="20")
+            ws_huni.append_row(["ID", "Tarih", "Müşteri Adı", "Telefon", "Konu", "Tahmini Tutar", "Aşama", "Sorumlu"])
         return sh
     except Exception as e:
         st.error(f"Google Sheets Bağlantı Hatası: {e}")
@@ -293,16 +297,10 @@ def eposta_gonder(alici_mail, musteri_adi, plaka, tip, teminatlar, prim, pdf_byt
         return True, "Teklif E-Postası başarıyla gönderildi!"
     except Exception as e: return False, f"Gönderim hatası: {e}"
 
-# YENİ: Komisyon Hesaplama Aracı
 def komisyon_hesapla(prim_tutari, police_tipi):
-    if police_tipi == "Kasko" or police_tipi == "Filo Kasko":
-        oran = 0.15 # Kasko %15
-    elif police_tipi == "Zorunlu Trafik Sigortası" or police_tipi == "Filo Zorunlu Trafik Sigortası":
-        oran = 0.08 # Trafik %8
-    elif police_tipi == "DASK":
-        oran = 0.15 # DASK %15
-    else:
-        oran = 0.10 # Diğer %10
+    if police_tipi in ["Kasko", "Filo Kasko", "DASK"]: oran = 0.15
+    elif police_tipi in ["Zorunlu Trafik Sigortası", "Filo Zorunlu Trafik Sigortası"]: oran = 0.08
+    else: oran = 0.10
     return int(prim_tutari * oran)
 
 db = veritabani_yukle()
@@ -317,7 +315,8 @@ st.sidebar.markdown("---")
 
 if st.session_state.rol in ["Admin", "Satis"]:
     st.sidebar.title("Modüller")
-    menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏢 Kurumsal Filo (B2B)", "🚗 Hasar Asistanı", "⚖️ Karşılaştırma"]
+    # YENİ: "📌 Satış Hunisi (Kanban)" sekmesi satış ve admine eklendi.
+    menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏢 Kurumsal Filo (B2B)", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı", "⚖️ Karşılaştırma"]
     if st.session_state.rol == "Admin":
         menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "🕵️‍♂️ AI Müşteri Profilleme", "📊 Finansal Dashboard"])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
@@ -457,8 +456,6 @@ elif sayfa == "📝 Poliçe Atölyesi":
             
         piyasa_primi = int(tahmini_prim * 1.18)
         avantaj_tutari = piyasa_primi - tahmini_prim
-        
-        # NET KOMİSYON HESAPLAMASI (GİZLİ)
         net_komisyon_tutari = komisyon_hesapla(tahmini_prim, p_tip)
         
         prim_yazisi = f"{tahmini_prim:,} TL"
@@ -481,13 +478,20 @@ elif sayfa == "📝 Poliçe Atölyesi":
         teminat_ozeti = f"- Cam: {'Sınırsız' if teminat_cam else 'Muafiyetli'}\n- İkame: {teminat_ikame}\n- İMM: {teminat_imm}"
         if kullanilan_ref: teminat_ozeti += f"\n- Kullanılan Referans: {kullanilan_ref}"
         
+        st.markdown("---")
+        if st.button("💡 Yapay Zeka Satış Tüyosu Üret"):
+            with st.spinner("Gemini satış stratejisi kurguluyor..."):
+                prompt = f"Sen elit satış koçusun. Müşteri '{p_tip}' poliçesi alıyor. Plakası: {p_plaka}. Bu müşteriye gelirini artırmak için hangi ek ürünü satmalıyız? İkna edici 2 cümle öner."
+                try: st.success(client.models.generate_content(model=TEXT_MODEL, contents=prompt).text)
+                except: st.error("Asistan yanıt veremiyor.")
+        st.markdown("---")
+        
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
             if st.button("💾 Google Sheets'e Kaydet", use_container_width=True):
                 if p_musteri and p_plaka and sh:
                     try:
                         zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        # YENİ: Gizli Net Komisyon Sütunu da kaydediliyor
                         sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi, net_komisyon_yazisi])
                         try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_plaka, "", "Poliçe Atölyesinden Eklendi"])
                         except: pass
@@ -496,6 +500,12 @@ elif sayfa == "📝 Poliçe Atölyesi":
         with col_btn2:
             if p_musteri and p_plaka:
                 st.download_button("📄 PDF İndir", data=pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, piyasa_yazisi, avantaj_yazisi, musteri_ozel_ref_kodu), file_name=f"Teklif_{p_plaka}.pdf", mime="application/pdf", use_container_width=True)
+        
+        if p_musteri and p_plaka:
+            st.markdown("---")
+            wp_mesaj = f"Merhaba {p_musteri},\nGrimset Studio güvencesiyle {p_plaka} plakalı aracınız için {p_tip} teklifiniz hazırlanmıştır.\n\nPiyasa Ortalaması: {piyasa_yazisi}\n*İndirimli Tutar:* {prim_yazisi}\nBu poliçeyle cebinizde kalan tutar: {avantaj_yazisi}!\n\n🎁 SİZE ÖZEL REFERANS KODUNUZ: {musteri_ozel_ref_kodu}\nBu kodu arkadaşlarınızla paylaşın, onlar bizden sigorta yaptırdığında bir sonraki poliçenizde anında %10 İNDİRİM kazanın!"
+            wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={urllib.parse.quote(wp_mesaj)}" if p_tel else f"https://wa.me/?text={urllib.parse.quote(wp_mesaj)}"
+            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp\'tan Gönder (Kod ile Beraber)</div></a>', unsafe_allow_html=True)
 
 elif sayfa == "🏢 Kurumsal Filo (B2B)":
     st.title("🏢 Kurumsal Filo Yönetimi (B2B Teklif Motoru)")
@@ -514,8 +524,6 @@ elif sayfa == "🏢 Kurumsal Filo (B2B)":
                 indirim_orani = min(arac_sayisi * 0.02, 0.30)
                 arac_basi_fiyat = int(taban_fiyat * (1 - indirim_orani))
                 toplam_filo_primi = arac_basi_fiyat * arac_sayisi
-                
-                # NET KOMİSYON HESAPLAMASI (FİLO)
                 net_komisyon_filo = komisyon_hesapla(toplam_filo_primi, f_tip)
                 
                 st.success(f"**{arac_sayisi} Adet Araç Başarıyla Eşleştirildi!**")
@@ -530,6 +538,92 @@ elif sayfa == "🏢 Kurumsal Filo (B2B)":
                             except Exception as e: st.error(f"Kayıt Hatası: {e}")
                 with col_btn2:
                     st.download_button("📄 PDF İndir", data=filo_pdf_olustur(f_firma, plakalar, f_tip, toplam_filo_primi), file_name=f"Grimset_{f_firma}.pdf", mime="application/pdf", use_container_width=True)
+
+# --- YENİ MODÜL: SATIŞ HUNİSİ (KANBAN) ---
+elif sayfa == "📌 Satış Hunisi (Kanban)":
+    st.title("📌 Akıllı Satış Hunisi (Kanban Panosu)")
+    st.markdown("Müşteri adaylarınızı aşamalar arasında sürükleyerek (seçerek) takip edin. Satış kapatma oranınızı artırın!")
+    st.markdown("---")
+    
+    if sh:
+        try:
+            ws_huni = sh.worksheet("Satış Hunisi")
+            
+            # --- YENİ ADAY EKLEME FORMU ---
+            with st.expander("➕ Yeni Satış Fırsatı (Aday) Ekle"):
+                with st.form("huni_form"):
+                    h_isim = st.text_input("Müşteri Adı")
+                    h_tel = st.text_input("Telefon")
+                    h_konu = st.text_input("İlgilendiği Ürün (Kasko, TSS, Filo vs.)")
+                    h_tutar = st.text_input("Tahmini Tutar (Opsiyonel)")
+                    
+                    if st.form_submit_button("Adayı Huniye Ekle"):
+                        if h_isim and h_konu:
+                            zaman_id = datetime.now().strftime("%Y%m%d%H%M%S") # Benzersiz ID
+                            tarih = datetime.now().strftime("%Y-%m-%d")
+                            ws_huni.append_row([zaman_id, tarih, h_isim, h_tel, h_konu, h_tutar, "Yeni Aday", st.session_state.kullanici_adi])
+                            st.success(f"{h_isim} aday olarak eklendi!")
+                            st.rerun()
+                        else:
+                            st.warning("Lütfen Müşteri Adı ve İlgilendiği Ürünü girin.")
+            
+            st.markdown("### 📊 Aktif Fırsatlar Tablosu")
+            
+            # Verileri Gspread'den çek ve başlıkları ayır
+            tum_veriler = ws_huni.get_all_values()
+            
+            if len(tum_veriler) > 1:
+                satirlar = tum_veriler[1:] # İlk satır başlıklar
+                
+                # Streamlit Kolonlarını Oluştur
+                k1, k2, k3, k4 = st.columns(4)
+                
+                k1.markdown("<div style='background-color: #2980b9; padding: 10px; border-radius: 5px; text-align: center; color: white;'><b>🆕 Yeni Aday</b></div><br>", unsafe_allow_html=True)
+                k2.markdown("<div style='background-color: #f39c12; padding: 10px; border-radius: 5px; text-align: center; color: white;'><b>⏳ Görüşülüyor</b></div><br>", unsafe_allow_html=True)
+                k3.markdown("<div style='background-color: #8e44ad; padding: 10px; border-radius: 5px; text-align: center; color: white;'><b>📄 Teklif Verildi</b></div><br>", unsafe_allow_html=True)
+                k4.markdown("<div style='background-color: #27ae60; padding: 10px; border-radius: 5px; text-align: center; color: white;'><b>🏆 Kazanıldı</b></div><br>", unsafe_allow_html=True)
+                
+                # Kayıtları aşamasına göre ilgili sütuna dağıt
+                for idx, row in enumerate(satirlar):
+                    # Olası eksik sütun hatalarını önlemek için kontrol
+                    if len(row) < 8: continue
+                    
+                    r_id, r_tar, r_isim, r_tel, r_konu, r_tut, r_asama, r_sorumlu = row
+                    
+                    # Hangi sütuna gideceğini belirle
+                    hedef_kolon = None
+                    if r_asama == "Yeni Aday": hedef_kolon = k1
+                    elif r_asama == "Görüşülüyor": hedef_kolon = k2
+                    elif r_asama == "Teklif Verildi": hedef_kolon = k3
+                    elif r_asama == "Kazanıldı": hedef_kolon = k4
+                    else: continue # 'İptal' edilenleri ekranda göstermeyebiliriz
+                    
+                    with hedef_kolon:
+                        with st.container(border=True):
+                            st.markdown(f"**👤 {r_isim}**")
+                            st.caption(f"🎯 Hedef: {r_konu}")
+                            if r_tut: st.caption(f"💰 Tutar: {r_tut}")
+                            st.caption(f"💼 Sorumlu: {r_sorumlu}")
+                            
+                            # Aşama Değiştirme Selectbox'ı
+                            # Selectbox değiştiğinde veritabanındaki (idx + 2) numaralı satırın 7. sütununu güncelliyoruz
+                            secili_index = ["Yeni Aday", "Görüşülüyor", "Teklif Verildi", "Kazanıldı", "İptal Edildi"].index(r_asama) if r_asama in ["Yeni Aday", "Görüşülüyor", "Teklif Verildi", "Kazanıldı", "İptal Edildi"] else 0
+                            
+                            yeni_asama = st.selectbox(
+                                "Durumu Güncelle", 
+                                ["Yeni Aday", "Görüşülüyor", "Teklif Verildi", "Kazanıldı", "İptal Edildi"],
+                                index=secili_index,
+                                key=f"asama_{r_id}"
+                            )
+                            
+                            if yeni_asama != r_asama:
+                                ws_huni.update_cell(idx + 2, 7, yeni_asama) # Gspread'de satırlar 1'den başlar (idx+2)
+                                st.rerun()
+            else:
+                st.info("Sistemde henüz takip edilen bir satış fırsatı bulunmuyor. Yukarıdan yeni aday ekleyebilirsiniz.")
+                
+        except Exception as e:
+            st.warning(f"Kanban verileri yüklenirken hata oluştu: {e}")
 
 elif sayfa == "🚗 Hasar Asistanı":
     st.title("🚗 Kaza ve Hasar Destek Asistanı")
@@ -662,7 +756,6 @@ elif sayfa == "🕵️‍♂️ AI Müşteri Profilleme" and st.session_state.ro
                             except Exception as e: st.error(f"Hata: {e}")
         except Exception as e: st.warning(f"Hata: {e}")
 
-# YENİ: FİNANSAL DASHBOARD'A KOMİSYON METRİKLERİ EKLENDİ
 elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
     st.title("📊 Yönetici Finansal Dashboard (Kâr/Zarar Merkezi)")
     st.markdown("---")
@@ -673,11 +766,8 @@ elif sayfa == "📊 Finansal Dashboard" and st.session_state.rol == "Admin":
             df = pd.DataFrame(policeler)
             df['Saf Prim'] = df['Toplam Prim'].astype(str).str.replace(' TL', '').str.replace(',', '').astype(float)
             
-            # Eski verilerde Komisyon sütunu yoksa varsayılan hesapla (hata vermemesi için)
-            if 'Net Komisyon' not in df.columns:
-                df['Net Komisyon'] = df['Saf Prim'] * 0.10
-            else:
-                df['Net Komisyon'] = df['Net Komisyon'].astype(str).str.replace(' TL', '').str.replace(',', '').replace('', '0').astype(float)
+            if 'Net Komisyon' not in df.columns: df['Net Komisyon'] = df['Saf Prim'] * 0.10
+            else: df['Net Komisyon'] = df['Net Komisyon'].astype(str).str.replace(' TL', '').str.replace(',', '').replace('', '0').astype(float)
                 
             if 'Satış Temsilcisi' not in df.columns: df['Satış Temsilcisi'] = 'Bilinmiyor'
             df['Satış Temsilcisi'] = df['Satış Temsilcisi'].replace('', 'Bilinmiyor').fillna('Bilinmiyor')
