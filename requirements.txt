@@ -4,3 +4,5 @@ pypdf
 pillow
 fpdf
 gspread
+pandas
+plotly
