@@ -158,7 +158,6 @@ db = veritabani_yukle()
 # --- YAN MENÜ ---
 st.sidebar.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=150)
 st.sidebar.title("Modüller")
-# YENİ EKLENEN SEKME: Vade & Yenileme
 sayfa = st.sidebar.radio("İşlem Seçin:", ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "⚖️ Karşılaştırma", "⏰ Vade & Yenileme", "📊 Finansal Dashboard"])
 st.sidebar.markdown("---")
 st.sidebar.caption("Grimset Studio © 2026")
@@ -219,7 +218,6 @@ if sayfa == "📋 Kayıt & Ayıklama":
                     st.session_state.mesajlar.append({"rol": "assistant", "icerik": response.text})
 
 elif sayfa == "📝 Poliçe Atölyesi":
-    # (Önceki Poliçe Atölyesi kodları aynı kalıyor, sadece yer tasarrufu için özet geçmedim, tam kod burada)
     st.title("📝 Poliçe Atölyesi (Üretim)")
     st.markdown("---")
     col1, col2 = st.columns([1, 1], gap="large")
@@ -237,6 +235,20 @@ elif sayfa == "📝 Poliçe Atölyesi":
         prim_yazisi = f"{tahmini_prim:,} TL"
         st.info(f"**Tahmini Prim:** {prim_yazisi}")
         teminat_ozeti = f"- Cam: {'Sınırsız' if teminat_cam else 'Muafiyetli'}\n- İkame: {teminat_ikame}\n- İMM: {teminat_imm}"
+        
+        # --- YENİ EKLENTİ: AI ÇAPRAZ SATIŞ ASİSTANI ---
+        st.markdown("---")
+        st.subheader("🧠 AI Çapraz Satış (Cross-Sell) Asistanı")
+        if st.button("💡 Müşteriye Özel Satış Tüyosu Üret"):
+            with st.spinner("Gemini satış stratejisi kurguluyor..."):
+                prompt = f"""Sen Grimset Studio'nun elit sigorta satış koçusun. Müşteri şu an '{p_tip}' poliçesi alıyor. Plakası: {p_plaka}. Teminatları: {teminat_ozeti}. 
+                Bu müşteriye gelirini artırmak için hangi ek sigorta ürününü (TSS, DASK, Konut vb.) satmalıyız? Satış temsilcisine 2-3 cümlelik harika, vurucu ve ikna edici bir cümle öner. Şöyle de: tarzında ver."""
+                try:
+                    cevap = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                    st.success(cevap)
+                except Exception as e:
+                    st.error("Yapay zeka asistanı şu an yanıt veremiyor.")
+        st.markdown("---")
         
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
@@ -274,7 +286,6 @@ elif sayfa == "⚖️ Karşılaştırma":
     if t1 and t2:
         if st.button("Kıyasla"): st.markdown(teklif_karsilastir(t1, t2))
 
-# --- YENİ MODÜL: VADE VE YENİLEME OTOMASYONU ---
 elif sayfa == "⏰ Vade & Yenileme":
     st.title("⏰ Akıllı Vade & Yenileme Panosu")
     st.markdown("Poliçesinin bitmesine 15 günden az kalan veya vadesi geçen müşterileri buradan tek tıkla yakalayın.")
@@ -296,18 +307,16 @@ elif sayfa == "⏰ Vade & Yenileme":
                     try:
                         vade_tarihi = datetime.strptime(vade_str, "%Y-%m-%d").date()
                         kalan_gun = (vade_tarihi - bugun).days
-                        if kalan_gun <= 15: # Sadece 15 gün ve altı kalanları (veya geçenleri) filtrele
+                        if kalan_gun <= 15:
                             m['kalan_gun'] = kalan_gun
                             yaklasanlar.append(m)
                     except:
-                        pass # Geçersiz tarih formatlarını atla
+                        pass
             
             if not yaklasanlar:
                 st.success("Harika! Yakın zamanda vadesi dolacak veya gecikmiş poliçe bulunmuyor. 🟢")
             else:
-                # Kalan güne göre sırala (en aciller en üstte)
                 yaklasanlar.sort(key=lambda x: x['kalan_gun'])
-                
                 for y in yaklasanlar:
                     k_gun = y['kalan_gun']
                     durum_renk = "🔴 VADESİ GEÇTİ!" if k_gun < 0 else (f"🟠 SON {k_gun} GÜN!" if k_gun <= 5 else f"🟡 {k_gun} Gün Kaldı")
@@ -322,7 +331,7 @@ elif sayfa == "⏰ Vade & Yenileme":
                             wa_link = f"https://wa.me/90{tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={vade_mesaji}"
                             st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 8px; border-radius: 5px; font-weight: bold; margin-top: 10px;">💬 Otomatik Yenileme Mesajı At</div></a>', unsafe_allow_html=True)
                         else:
-                            st.warning("Bu müşterinin telefon numarası kayıtlı olmadığı için WhatsApp butonu aktif değil.")
+                            st.warning("Bu müşterinin telefon numarası kayıtlı değil.")
                             
         except Exception as e:
             st.warning(f"Veriler çekilirken hata oluştu: {e}")
