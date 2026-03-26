@@ -31,6 +31,7 @@ st.markdown("""
     div[data-testid="metric-container"] { background-color: #1e1e1e; border: 1px solid #333; padding: 5% 5% 5% 10%; border-radius: 10px; box-shadow: 2px 2px 10px rgba(0,0,0,0.2); color: white; }
     [data-testid="stSidebar"] { background-color: #0e1117; border-right: 1px solid #2d2d2d; }
     .login-box { max-width: 400px; margin: auto; padding: 2rem; border-radius: 10px; background-color: #1e1e1e; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+    .status-badge { padding: 5px 10px; border-radius: 5px; font-weight: bold; color: white; display: inline-block; margin-bottom: 5px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -68,7 +69,8 @@ def sheets_baglantisi_kur():
         try: ws_hasar = sh.worksheet("Hasar Kayıtları")
         except:
             ws_hasar = sh.add_worksheet(title="Hasar Kayıtları", rows="1000", cols="20")
-            ws_hasar.append_row(["Tarih", "Müşteri Adı", "Plaka", "Hasar Raporu"])
+            # YENİ: Durum Sütunu eklendi
+            ws_hasar.append_row(["Tarih", "Müşteri Adı", "Plaka", "Hasar Raporu", "Durum"])
         try: ws_filo = sh.worksheet("Filo Teklifleri")
         except:
             ws_filo = sh.add_worksheet(title="Filo Teklifleri", rows="1000", cols="20")
@@ -194,9 +196,9 @@ SADECE aşağıdaki alanları tek bir temiz liste halinde ver. Okunamayan verile
     except Exception as e: return f"Hata: {e}"
 
 def kaza_analizi_yap(gorsel_dosyalari, plaka, isim):
-    prompt = f"""Sen Grimset Studio'nun uzman eksperisin. Müşterimiz {isim}'e ait {plaka} plakalı aracın kaza görselleri ektedir. Lütfen raporla:
+    prompt = f"""Sen Grimset Studio'nun uzman eksperisin. Müşterimiz {isim}'e ait {plaka} plakalı aracın/hasarın görselleri ektedir. Lütfen raporla:
 1. GÖRÜNÜR HASAR ANALİZİ
-2. KUSUR TAHMİNİ
+2. KUSUR TAHMİNİ (Varsa)
 3. HASAR BEYAN DİLEKÇESİ (Resmi dille)"""
     try:
         icerik_listesi = [prompt]
@@ -343,11 +345,21 @@ def eposta_gonder(alici_mail, musteri_adi, plaka, tip, teminatlar, prim, pdf_byt
     except Exception as e: return False, f"Gönderim hatası: {e}"
 
 def komisyon_hesapla(prim_tutari, police_tipi):
-    # Sağlık Sigortaları genellikle yüksek komisyonludur
     if police_tipi in ["Kasko", "Filo Kasko", "DASK", "Tamamlayıcı Sağlık Sigortası (TSS)", "Özel Sağlık Sigortası (ÖSS)"]: oran = 0.15
     elif police_tipi in ["Zorunlu Trafik Sigortası", "Filo Zorunlu Trafik Sigortası"]: oran = 0.08
     else: oran = 0.10
     return int(prim_tutari * oran)
+
+# YENİ: Durum Renkleri
+def get_status_color(durum):
+    renkler = {
+        "İnceleniyor": "#f39c12", # Turuncu
+        "Eksper Atandı": "#3498db", # Mavi
+        "Onarımda": "#9b59b6", # Mor
+        "Ödeme Bekleniyor": "#e67e22", # Koyu Turuncu
+        "Tamamlandı": "#2ecc71" # Yeşil
+    }
+    return renkler.get(durum, "#95a5a6")
 
 db = veritabani_yukle()
 
@@ -361,14 +373,13 @@ st.sidebar.markdown("---")
 
 if st.session_state.rol in ["Admin", "Satis"]:
     st.sidebar.title("Modüller")
-    # YENİ: Sağlık Sigortası Modülü Eklendi
-    menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏥 Sağlık (TSS/ÖSS)", "🏢 Kurumsal Filo (B2B)", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı"]
+    menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏥 Sağlık (TSS/ÖSS)", "🏢 Kurumsal Filo (B2B)", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı & Süreç Yönetimi", "⚖️ Karşılaştırma"]
     if st.session_state.rol == "Admin":
         menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "🕵️‍♂️ AI Müşteri Profilleme", "📊 Finansal Dashboard"])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 else:
     st.sidebar.title("Müşteri Paneli")
-    menu_secenekleri = ["🏠 Poliçelerim", "🚗 Hasar Bildir"]
+    menu_secenekleri = ["🏠 Poliçelerim", "🚗 Hasar Bildir & Takip Et"]
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 
 st.sidebar.markdown("---")
@@ -397,8 +408,32 @@ if sayfa == "🏠 Poliçelerim" and st.session_state.rol == "Musteri":
                         st.markdown("---")
         except Exception as e: st.error(f"Veriler çekilirken hata oluştu: {e}")
 
-elif sayfa == "🚗 Hasar Bildir" and st.session_state.rol == "Musteri":
-    st.title("🚗 Kaza ve Hasar Bildirimi")
+# YENİ: Müşteri Hasar Takip
+elif sayfa == "🚗 Hasar Bildir & Takip Et" and st.session_state.rol == "Musteri":
+    st.title("🚗 Hasar Bildirim ve Dosya Takip Merkezi")
+    
+    # 1. Mevcut Hasarları Göster
+    st.markdown("### 📋 Mevcut Hasar Dosyalarınız")
+    if sh:
+        try:
+            hasarlar = sh.worksheet("Hasar Kayıtları").get_all_records()
+            benim_hasarlarim = [h for h in hasarlar if str(h.get("Plaka", "")).replace(" ", "").upper() == st.session_state.musteri_plaka]
+            
+            if not benim_hasarlarim:
+                st.info("Aktif veya geçmiş bir hasar kaydınız bulunmamaktadır.")
+            else:
+                for h in benim_hasarlarim:
+                    durum = str(h.get("Durum", "İnceleniyor"))
+                    renk = get_status_color(durum)
+                    
+                    with st.expander(f"Kaza Tarihi: {h.get('Tarih', '')}"):
+                        st.markdown(f"<span class='status-badge' style='background-color: {renk};'>Durum: {durum}</span>", unsafe_allow_html=True)
+                        st.write("**Hasar Raporu:**")
+                        st.info(h.get("Hasar Raporu", ""))
+        except Exception as e: st.error("Hasar verileri çekilemedi.")
+    
+    st.markdown("---")
+    st.markdown("### ➕ Yeni Hasar Bildir")
     st.info(f"**İşlem Yapılan Araç:** {st.session_state.musteri_plaka} | **Ruhsat Sahibi:** {st.session_state.kullanici_adi}")
     h_gorseller = st.file_uploader("Kaza ve Tutanak Fotoğrafları Yükle", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
     if h_gorseller:
@@ -410,7 +445,10 @@ elif sayfa == "🚗 Hasar Bildir" and st.session_state.rol == "Musteri":
                 analiz = kaza_analizi_yap(h_gorseller, st.session_state.musteri_plaka, st.session_state.kullanici_adi)
                 st.success("Rapor başarıyla oluşturuldu ve Grimset Studio'ya iletildi!")
                 st.info(analiz)
-                try: sh.worksheet("Hasar Kayıtları").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.session_state.kullanici_adi, st.session_state.musteri_plaka, analiz])
+                try: 
+                    # Varsayılan olarak "İnceleniyor" durumuyla kaydedilir
+                    sh.worksheet("Hasar Kayıtları").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.session_state.kullanici_adi, st.session_state.musteri_plaka, analiz, "İnceleniyor"])
+                    st.rerun()
                 except Exception as e: pass
         else: st.warning("Lütfen en az bir kaza fotoğrafı yükleyin.")
 
@@ -475,7 +513,7 @@ elif sayfa == "📋 Kayıt & Ayıklama":
                     st.session_state.mesajlar.append({"rol": "assistant", "icerik": response.text})
 
 elif sayfa == "📝 Poliçe Atölyesi":
-    st.title("📝 Poliçe Atölyesi (Perakende Oto/Dask)")
+    st.title("📝 Poliçe Atölyesi (Perakende & Global)")
     st.markdown("---")
     
     secilen_dil = st.radio("🌍 Müşteri İletişim Dili (PDF ve Mesaj Şablonu)", ["Türkçe", "English", "Deutsch", "Français"], horizontal=True)
@@ -569,17 +607,16 @@ elif sayfa == "📝 Poliçe Atölyesi":
             wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={urllib.parse.quote(wp_mesaj)}" if p_tel else f"https://wa.me/?text={urllib.parse.quote(wp_mesaj)}"
             st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp Gönder ({secilen_dil})</div></a>', unsafe_allow_html=True)
 
-# --- YENİ MODÜL: SAĞLIK SİGORTASI (TSS/ÖSS) ---
 elif sayfa == "🏥 Sağlık (TSS/ÖSS)":
     st.title("🏥 Sağlık Sigortası Yapay Zeka Fiyatlama Robotu")
-    st.markdown("Müşterinin fiziksel ve mesleki risk profilini çıkararak nokta atışı Tamamlayıcı (TSS) veya Özel (ÖSS) Sağlık Sigortası teklifi sunun.")
+    st.markdown("Müşterinin fiziksel ve mesleki risk profilini çıkararak nokta atışı teklif sunun.")
     st.markdown("---")
     
     s_col1, s_col2 = st.columns([1, 1.2], gap="large")
     
     with s_col1:
         s_musteri = st.text_input("Müşteri Adı Soyadı")
-        s_tc_tel = st.text_input("T.C. Kimlik No (Sistem Kaydı İçin)", placeholder="Örn: 12345678901")
+        s_tc_tel = st.text_input("T.C. Kimlik No", placeholder="Örn: 12345678901")
         s_tel = st.text_input("Telefon Numarası")
         
         st.markdown("### 📋 Profil Bilgileri")
@@ -589,12 +626,11 @@ elif sayfa == "🏥 Sağlık (TSS/ÖSS)":
         s_kilo = c_kilo.number_input("Kilo (kg)", min_value=40, max_value=150, value=75)
         
         s_meslek = st.selectbox("Meslek / Çalışma Koşulu", ["Masa Başı / Ofis", "Sürekli Ayakta / Satış", "Ağır Sanayi / İnşaat", "Şoför / Lojistik", "Sağlık Çalışanı", "Çalışmıyor / Emekli"])
-        s_hastalik = st.text_area("Mevcut/Geçmiş Hastalıklar (Varsa)", placeholder="Örn: Bel fıtığı, Hipertansiyon, Astım vb. Yoksa boş bırakın.")
+        s_hastalik = st.text_area("Mevcut/Geçmiş Hastalıklar", placeholder="Örn: Bel fıtığı, Hipertansiyon, Astım vb.")
         
         s_tip = st.radio("İstenen Poliçe Tipi", ["Tamamlayıcı Sağlık Sigortası (TSS)", "Özel Sağlık Sigortası (ÖSS)"], horizontal=True)
 
     with s_col2:
-        # Vücut Kitle İndeksi (VKİ) Hesaplama
         vki = 0
         if s_boy > 0:
             boy_m = s_boy / 100
@@ -607,7 +643,6 @@ elif sayfa == "🏥 Sağlık (TSS/ÖSS)":
         
         st.info(f"⚖️ **Vücut Kitle İndeksi (VKİ): {vki} ({vki_durum})**")
         
-        # Fiyat Hesaplama Algoritması
         taban_fiyat = 8000 if s_tip == "Tamamlayıcı Sağlık Sigortası (TSS)" else 25000
         yas_ek_primi = (s_yas - 18) * (150 if s_tip == "Tamamlayıcı Sağlık Sigortası (TSS)" else 400)
         vki_ek_primi = 3000 if vki >= 30 else 0
@@ -618,22 +653,14 @@ elif sayfa == "🏥 Sağlık (TSS/ÖSS)":
         
         st.markdown(f"### 💰 Hesaplanan Toplam Prim: **{toplam_saglik_primi:,} TL**")
         
-        # Yapay Zeka Risk Analizi Butonu
         if st.button("🧠 AI Risk Analizi Yap & Teminat Öner", type="primary", use_container_width=True):
             if s_musteri:
                 with st.spinner("Gemini aktüeryal risk analizi yapıyor..."):
-                    prompt = f"""Sen Grimset Studio'nun elit sağlık sigortası aktüerisin. Müşteri yaşı: {s_yas}, Boy: {s_boy}cm, Kilo: {s_kilo}kg (VKİ: {vki} - {vki_durum}), Meslek: {s_meslek}, Mevcut Hastalıklar: {s_hastalik if s_hastalik else 'Yok'}. 
-Müşteriye {s_tip} poliçesi sunacağız. 
-Lütfen şunları raporla:
-1. **Risk Analizi:** Fiziksel ve mesleki durumuna göre olası sağlık riskleri nelerdir?
-2. **Özel Teminat Önerisi:** Poliçeye hangi ek teminatlar (fizik tedavi, check-up, göz, diş vb.) kesinlikle eklenmeli?
-3. **Satış Kapanış Cümlesi:** Satış temsilcisi (Ali) bu müşteriye telefonda tam olarak ne diyerek bu poliçeyi satmalı? (Çarpıcı ve ikna edici 2 cümle)"""
+                    prompt = f"Sen elit sağlık aktüerisin. Müşteri yaşı: {s_yas}, VKİ: {vki_durum}, Meslek: {s_meslek}, Hastalıklar: {s_hastalik if s_hastalik else 'Yok'}. 1. Olası riskler, 2. Önerilen ek teminatlar, 3. Satış kapanış cümlesi (2 cümle)."
                     try:
-                        analiz_sonucu = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
-                        st.session_state.saglik_analizi = analiz_sonucu
+                        st.session_state.saglik_analizi = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
                     except Exception as e: st.error("AI bağlantı hatası.")
-            else:
-                st.warning("Lütfen Müşteri Adını girin.")
+            else: st.warning("Lütfen Müşteri Adını girin.")
                 
         if "saglik_analizi" in st.session_state:
             with st.container(border=True):
@@ -647,8 +674,6 @@ Lütfen şunları raporla:
                 if s_musteri and s_tc_tel and sh:
                     try:
                         zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        ai_ozet = st.session_state.saglik_analizi if "saglik_analizi" in st.session_state else "Standart Teminatlar"
-                        
                         sh.worksheet("Üretilen Poliçeler").append_row([zaman, s_musteri, s_tc_tel, s_tip, "Yapay Zeka Özel Sağlık Analizi Eklidir", f"{toplam_saglik_primi:,} TL", st.session_state.kullanici_adi, f"{net_saglik_komisyonu:,} TL"])
                         try: sh.worksheet("Müşteri Portföyü").append_row([zaman, s_musteri, s_tel, s_tc_tel, "", f"Sağlık Profili: VKİ {vki}, Yaş {s_yas}"])
                         except: pass
@@ -753,9 +778,13 @@ elif sayfa == "📌 Satış Hunisi (Kanban)":
             else: st.info("Takip edilen fırsat yok.")
         except Exception as e: st.warning(f"Hata: {e}")
 
-elif sayfa == "🚗 Hasar Asistanı":
-    st.title("🚗 Kaza ve Hasar Destek Asistanı")
+# --- YENİ EKLENEN SÜREÇ YÖNETİMİ: HASAR ASİSTANI (ADMİN/SATIŞ İÇİN) ---
+elif sayfa == "🚗 Hasar Asistanı & Süreç Yönetimi":
+    st.title("🚗 Kaza ve Hasar Destek & Süreç Yönetimi")
+    st.markdown("Hasar dosyalarını oluşturun, yapay zeka ile analiz edin ve dosyaların aşamalarını (eksper, onarım) yönetin.")
     st.markdown("---")
+    
+    st.markdown("### ➕ Yeni Hasar Analizi ve Dosya Açılışı")
     h_col1, h_col2 = st.columns([1, 2], gap="large")
     with h_col1:
         h_isim = st.text_input("Müşteri Adı Soyadı")
@@ -773,11 +802,66 @@ elif sayfa == "🚗 Hasar Asistanı":
         if "son_kaza_analizi" in st.session_state and st.session_state.son_kaza_analizi:
             st.success("Rapor Başarıyla Oluşturuldu!")
             st.info(st.session_state.son_kaza_analizi)
-            if st.button("💾 Google Sheets'e Kaydet"):
+            if st.button("💾 Hasar Dosyasını Aç (Kaydet)"):
                 try:
-                    sh.worksheet("Hasar Kayıtları").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), h_isim, h_plaka, st.session_state.son_kaza_analizi])
-                    st.success("Kaydedildi!")
+                    # Varsayılan olarak "İnceleniyor" durumu ile kaydedilir
+                    sh.worksheet("Hasar Kayıtları").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), h_isim, h_plaka, st.session_state.son_kaza_analizi, "İnceleniyor"])
+                    st.success("Dosya açıldı ve sisteme kaydedildi!")
                 except Exception as e: st.error(f"Hata: {e}")
+
+    st.markdown("---")
+    st.markdown("### 📂 Aktif Hasar Dosyaları ve Süreç Takibi")
+    if sh:
+        try:
+            ws_hasar = sh.worksheet("Hasar Kayıtları")
+            tum_hasarlar = ws_hasar.get_all_values()
+            
+            if len(tum_hasarlar) > 1:
+                hasar_satirlari = tum_hasarlar[1:]
+                
+                for idx, h_row in enumerate(reversed(hasar_satirlari)): # En yeniler üstte
+                    # Gerçek satır indexini bulmak için (tersten döndüğümüz için hesaplıyoruz)
+                    gercek_idx = len(hasar_satirlari) - idx
+                    
+                    if len(h_row) >= 4:
+                        r_tar = h_row[0]
+                        r_isim = h_row[1]
+                        r_plaka = h_row[2]
+                        r_rapor = h_row[3]
+                        # 5. sütun durumu varsa al, yoksa "İnceleniyor" kabul et
+                        r_durum = h_row[4] if len(h_row) >= 5 else "İnceleniyor"
+                        
+                        renk = get_status_color(r_durum)
+                        
+                        with st.expander(f"{r_isim} - Plaka: {r_plaka} | Tarih: {r_tar}"):
+                            st.markdown(f"<span class='status-badge' style='background-color: {renk};'>Mevcut Durum: {r_durum}</span>", unsafe_allow_html=True)
+                            st.write(f"**Hasar Raporu:**\n{r_rapor}")
+                            
+                            secenekler = ["İnceleniyor", "Eksper Atandı", "Onarımda", "Ödeme Bekleniyor", "Tamamlandı"]
+                            secili_index = secenekler.index(r_durum) if r_durum in secenekler else 0
+                            
+                            yeni_durum = st.selectbox("Müşteri Portalında Görünecek Durumu Güncelle", secenekler, index=secili_index, key=f"hdurum_{gercek_idx}")
+                            
+                            if yeni_durum != r_durum:
+                                ws_hasar.update_cell(gercek_idx + 1, 5, yeni_durum)
+                                st.success("Durum güncellendi! Müşteri portalına yansıdı.")
+                                st.rerun()
+            else:
+                st.info("Sistemde açık hasar dosyası bulunmuyor.")
+        except Exception as e:
+            st.warning(f"Hasar dosyaları çekilirken bir hata oluştu: {e}")
+
+elif sayfa == "⚖️ Karşılaştırma":
+    st.title("⚖️ Teklif Karşılaştırma Analizi")
+    col1, col2 = st.columns(2)
+    with col1:
+        t1 = st.file_uploader("1. Teklif", type=["jpg", "png"], key="t1")
+        if t1: st.image(t1)
+    with col2:
+        t2 = st.file_uploader("2. Teklif", type=["jpg", "png"], key="t2")
+        if t2: st.image(t2)
+    if t1 and t2:
+        if st.button("Kıyasla"): st.markdown(teklif_karsilastir(t1, t2))
 
 elif sayfa == "⏰ Vade & Yenileme" and st.session_state.rol == "Admin":
     st.title("⏰ Akıllı Vade & Yenileme Panosu")
