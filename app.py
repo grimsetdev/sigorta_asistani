@@ -103,9 +103,25 @@ def veritabani_yukle():
         with open(HAFIZA_DOSYASI, 'rb') as f: return pickle.load(f)
     return hafizayi_olustur_ve_kaydet()
 
-def ruhsat_oku(gorsel_dosya):
-    try: return client.models.generate_content(model=VISION_MODEL, contents=["SADECE alanları ayıkla ve temiz liste ver.", Image.open(gorsel_dosya)]).text
-    except: return None
+# YENİ: ÇOKLU BELGE OKUMA FONKSİYONU
+def coklu_belge_oku(gorsel_dosyalari):
+    prompt = """Sen analitik bir OCR asistanısın. Sana gönderilen tüm belgeleri (Kimlik, Ruhsat, Eski Poliçe vb.) aynı anda analiz et. 
+Belgelerdeki bilgileri harmanlayarak SADECE aşağıdaki alanları tek bir temiz liste halinde ver. Okunamayan verileri boş bırak:
+- Müşteri Adı Soyadı:
+- T.C. Kimlik No:
+- Araç Plakası:
+- Şasi No (VIN):
+- Motor No:
+- Marka/Model/Yıl:
+- Mevcut Poliçe Bitiş Tarihi (Varsa):
+Asla yorum yapma."""
+    try:
+        icerik_listesi = [prompt]
+        for dosya in gorsel_dosyalari:
+            icerik_listesi.append(Image.open(dosya))
+        return client.models.generate_content(model=VISION_MODEL, contents=icerik_listesi).text
+    except Exception as e: 
+        return f"Görsel İşleme Hatası: {e}"
 
 def teklif_karsilastir(gorsel_1, gorsel_2):
     try: return client.models.generate_content(model=VISION_MODEL, contents=["İki teklifi kıyasla ve raporla.", Image.open(gorsel_1), Image.open(gorsel_2)]).text
@@ -165,20 +181,32 @@ st.sidebar.caption("Grimset Studio © 2026")
 if sayfa == "📋 Kayıt & Ayıklama":
     sol_panel, sag_panel = st.columns([1, 2], gap="large")
     with sol_panel:
-        st.title("🛡️ Evrak Okuma")
+        st.title("🛡️ Çoklu Evrak Okuma")
+        st.markdown("Müşterinin Kimlik, Ruhsat ve Eski Poliçe fotoğraflarını aynı anda yükleyin.")
         st.markdown("---")
+        
         if "son_ocr" not in st.session_state: st.session_state.son_ocr = None
-        yuklenen_gorsel = st.file_uploader("Ruhsat veya Kimlik yükle...", type=["jpg", "jpeg", "png"])
-        if yuklenen_gorsel:
-            st.image(yuklenen_gorsel, use_container_width=True)
-            if st.button("Verileri Ayıkla", use_container_width=True):
-                with st.spinner("Gemini Vision çalışıyor..."):
-                    ayiklanan = ruhsat_oku(yuklenen_gorsel)
-                    if ayiklanan:
+        
+        # YENİ: Çoklu Dosya Yükleme Alanı
+        yuklenen_gorseller = st.file_uploader("Birden fazla belge seçebilirsiniz...", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+        
+        if yuklenen_gorseller:
+            # Yüklenen fotoğrafları yan yana küçük önizlemeler halinde göster
+            gorsel_sutunlari = st.columns(len(yuklenen_gorseller))
+            for idx, img in enumerate(yuklenen_gorseller):
+                gorsel_sutunlari[idx].image(img, use_container_width=True)
+                
+            if st.button("Tüm Belgeleri Harmanla ve Ayıkla", use_container_width=True, type="primary"):
+                with st.spinner("Gemini belgeleri çapraz analiz ediyor..."):
+                    ayiklanan = coklu_belge_oku(yuklenen_gorseller)
+                    if ayiklanan and "Hata:" not in ayiklanan:
                         st.session_state.son_ocr = ayiklanan
-                        st.success("Başarılı!")
+                        st.success("Tüm belgeler harmanlandı!")
+                    else:
+                        st.error(ayiklanan)
+                        
         if st.session_state.son_ocr:
-            st.text_area("Bilgiler", value=st.session_state.son_ocr, height=200)
+            st.text_area("Çapraz Analiz Sonuçları", value=st.session_state.son_ocr, height=220)
             with st.form("crm_form"):
                 m_adi = st.text_input("Ad Soyad")
                 m_tel = st.text_input("Telefon (5XX...)")
@@ -236,7 +264,6 @@ elif sayfa == "📝 Poliçe Atölyesi":
         st.info(f"**Tahmini Prim:** {prim_yazisi}")
         teminat_ozeti = f"- Cam: {'Sınırsız' if teminat_cam else 'Muafiyetli'}\n- İkame: {teminat_ikame}\n- İMM: {teminat_imm}"
         
-        # --- YENİ EKLENTİ: AI ÇAPRAZ SATIŞ ASİSTANI ---
         st.markdown("---")
         st.subheader("🧠 AI Çapraz Satış (Cross-Sell) Asistanı")
         if st.button("💡 Müşteriye Özel Satış Tüyosu Üret"):
