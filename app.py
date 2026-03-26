@@ -32,6 +32,8 @@ st.markdown("""
     [data-testid="stSidebar"] { background-color: #0e1117; border-right: 1px solid #2d2d2d; }
     .login-box { max-width: 400px; margin: auto; padding: 2rem; border-radius: 10px; background-color: #1e1e1e; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
     .status-badge { padding: 5px 10px; border-radius: 5px; font-weight: bold; color: white; display: inline-block; margin-bottom: 5px;}
+    .churn-high { color: #ff4d4d; font-weight: bold; font-size: 1.2rem; }
+    .churn-low { color: #2ecc71; font-weight: bold; font-size: 1.2rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -382,13 +384,12 @@ if st.sidebar.button("🚪 Çıkış Yap", use_container_width=True):
     st.session_state.giris_yapildi = False
     st.rerun()
 
-# --- YENİ EKLENEN: GÜNLÜK AKSİYON MERKEZİ (SADECE PERSONEL/ADMİN) ---
+# --- GÜNLÜK AKSİYON MERKEZİ ---
 if st.session_state.rol in ["Admin", "Satis"]:
     st.sidebar.markdown("---")
     with st.sidebar.expander("🔔 GÜNLÜK AKSİYON MERKEZİ", expanded=True):
         if sh:
-            # Yaklaşan Vadeler
-            vade_sayisi = 0
+            vade_sayisi, hasar_sayisi, firsat_sayisi, churn_riski_sayisi = 0, 0, 0, 0
             try:
                 musteriler = sh.worksheet("Müşteri Portföyü").get_all_records()
                 bugun = datetime.now().date()
@@ -397,41 +398,51 @@ if st.session_state.rol in ["Admin", "Satis"]:
                     if vade_str:
                         try:
                             v_date = datetime.strptime(vade_str, "%Y-%m-%d").date()
-                            if 0 <= (v_date - bugun).days <= 15:
-                                vade_sayisi += 1
+                            if 0 <= (v_date - bugun).days <= 15: vade_sayisi += 1
                         except: pass
             except: pass
-            
-            # Açık Hasarlar
-            hasar_sayisi = 0
             try:
                 hasarlar = sh.worksheet("Hasar Kayıtları").get_all_records()
                 for h in hasarlar:
-                    if str(h.get("Durum", "")) not in ["Tamamlandı", "İptal Edildi"]:
-                        hasar_sayisi += 1
+                    if str(h.get("Durum", "")) not in ["Tamamlandı", "İptal Edildi"]: hasar_sayisi += 1
             except: pass
-            
-            # Bekleyen Kanban Fırsatları
-            firsat_sayisi = 0
             try:
                 huni = sh.worksheet("Satış Hunisi").get_all_records()
                 for f in huni:
-                    if str(f.get("Aşama", "")) not in ["Kazanıldı", "İptal Edildi"]:
-                        firsat_sayisi += 1
+                    if str(f.get("Aşama", "")) not in ["Kazanıldı", "İptal Edildi"]: firsat_sayisi += 1
             except: pass
             
+            # YENİ: Churn Riski Taşıyanları Bul (Vadesine 30 gün kalmış ve 1'den fazla poliçesi olan VIP'ler)
+            try:
+                policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
+                df_pol = pd.DataFrame(policeler)
+                if not df_pol.empty and 'Müşteri Adı' in df_pol.columns:
+                    islem_sayilari = df_pol['Müşteri Adı'].value_counts()
+                    vip_musteriler = islem_sayilari[islem_sayilari >= 2].index.tolist()
+                    for m in musteriler:
+                        if m.get('Müşteri Adı') in vip_musteriler:
+                            v_str = str(m.get('Vade Tarihi', ''))
+                            if v_str:
+                                try:
+                                    v_date = datetime.strptime(v_str, "%Y-%m-%d").date()
+                                    if 0 <= (v_date - bugun).days <= 30: churn_riski_sayisi += 1
+                                except: pass
+            except: pass
+
             st.markdown(f"**⏰ Yaklaşan Vadeler:** `{vade_sayisi} Kişi`")
             st.markdown(f"**🚗 Açık Hasarlar:** `{hasar_sayisi} Dosya`")
             st.markdown(f"**📌 Bekleyen Fırsat:** `{firsat_sayisi} İşlem`")
-            st.caption("Detaylar için ilgili modüllere gidin.")
+            if churn_riski_sayisi > 0:
+                st.markdown(f"**⚠️ Churn Riski (VIP):** <span style='color:#ff4d4d;font-weight:bold;'>{churn_riski_sayisi} Kişi</span>", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
 
 if st.session_state.rol in ["Admin", "Satis"]:
     st.sidebar.title("Modüller")
+    # YENİ: Profilleme menüsü LTV ve Churn olarak değiştirildi
     menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏥 Sağlık (TSS/ÖSS)", "🏢 Kurumsal Filo (B2B)", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı & Süreç Yönetimi", "⚖️ Karşılaştırma"]
     if st.session_state.rol == "Admin":
-        menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "🕵️‍♂️ AI Müşteri Profilleme", "💸 Gider Yönetimi", "📊 Finansal Dashboard"])
+        menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "📈 LTV & Churn Analizi", "💸 Gider Yönetimi", "📊 Finansal Dashboard"])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 else:
     st.sidebar.title("Müşteri Paneli")
@@ -490,7 +501,7 @@ elif sayfa == "🚗 Hasar Bildir & Takip Et" and st.session_state.rol == "Muster
         for idx, img in enumerate(h_gorseller[:3]): gorsel_sutunlari[idx].image(img, use_container_width=True)
     if st.button("🔍 Hasar Raporunu Oluştur ve Acenteme Gönder", type="primary", use_container_width=True):
         if h_gorseller:
-            with st.spinner("Yapay zeka fotoğrafları inceliyor, rapor hazırlanıyor..."):
+            with st.spinner("Yapay zeka fotoğrafları inceliyor..."):
                 analiz = kaza_analizi_yap(h_gorseller, st.session_state.musteri_plaka, st.session_state.kullanici_adi)
                 st.success("Rapor başarıyla oluşturuldu ve Grimset Studio'ya iletildi!")
                 st.info(analiz)
@@ -965,9 +976,12 @@ elif sayfa == "🎯 Kampanya Motoru" and st.session_state.rol == "Admin":
                 else: st.warning("Plaka eşleşmesi yapılamadı.")
         except Exception as e: st.warning(f"Hata: {e}")
 
-elif sayfa == "🕵️‍♂️ AI Müşteri Profilleme" and st.session_state.rol == "Admin":
-    st.title("🕵️‍♂️ Yapay Zeka Müşteri Risk & Sadakat Profillemesi")
+# YENİ MODÜL: MİKROEKONOMİK LTV VE CHURN
+elif sayfa == "📈 LTV & Churn Analizi" and st.session_state.rol == "Admin":
+    st.title("📈 Mikroekonomik LTV ve Churn (Ayrılma) Analizi")
+    st.markdown("Müşterinin Yaşam Boyu Değerini (LTV) hesaplayın ve fiyat duyarlılığına göre şirketi terk etme (Churn) riskini tespit edip strateji üretin.")
     st.markdown("---")
+    
     if sh:
         try:
             uretimler = sh.worksheet("Üretilen Poliçeler").get_all_records()
@@ -976,19 +990,61 @@ elif sayfa == "🕵️‍♂️ AI Müşteri Profilleme" and st.session_state.ro
             else:
                 df_police = pd.DataFrame(uretimler)
                 musteri_listesi = df_police['Müşteri Adı'].dropna().unique()
+                
                 if len(musteri_listesi) > 0:
-                    secilen_musteri = st.selectbox("Müşteri Seçin:", musteri_listesi)
-                    if st.button("🧠 Profili Çıkar", type="primary", use_container_width=True):
-                        with st.spinner("İnceleniyor..."):
+                    secilen_musteri = st.selectbox("Analiz Edilecek Müşteriyi Seçin:", musteri_listesi)
+                    
+                    if st.button("🧠 LTV ve Churn Riskini Hesapla", type="primary", use_container_width=True):
+                        with st.spinner("Mikroekonomik veriler derleniyor..."):
                             m_data = df_police[df_police['Müşteri Adı'] == secilen_musteri]
-                            policeler_str = ", ".join(m_data['Poliçe Tipi'].astype(str).tolist())
-                            plakalar_str = ", ".join(m_data['Plaka'].astype(str).unique().tolist())
-                            toplam_harcama = sum([int(str(row.get('Toplam Prim', '0')).replace(' TL', '').replace(',', '')) for index, row in m_data.iterrows() if str(row.get('Toplam Prim', '0')).replace(' TL', '').replace(',', '').isdigit()])
-                            prompt = f"Sen Grimset Studio'nun elit sigorta aktüerisin. Müşteri: {secilen_musteri}, Araçlar: {plakalar_str}, İşlemler: {policeler_str}, Şirkete Kazandırdığı: {toplam_harcama} TL. 1. Sadakat Puanı, 2. Risk Puanı, 3. Profil Özeti, 4. VIP Satış Stratejisi çıkar."
+                            
+                            islem_sayisi = len(m_data)
+                            
+                            # Toplam Ciro Hesaplama
+                            toplam_ciro = m_data['Toplam Prim'].apply(lambda x: int(str(x).replace(' TL', '').replace(',', '')) if str(x).replace(' TL', '').replace(',', '').isdigit() else 0).sum()
+                            
+                            # Toplam Komisyon Hesaplama (LTV)
+                            def temizle_komisyon(x):
+                                try: return int(str(x).replace(' TL', '').replace(',', '').replace('.', ''))
+                                except: return 0
+                                
+                            if 'Net Komisyon' in m_data.columns:
+                                ltv_degeri = m_data['Net Komisyon'].apply(temizle_komisyon).sum()
+                            else:
+                                ltv_degeri = toplam_ciro * 0.10 # Varsayılan
+                                
+                            # Basit Churn Riski Algoritması (İşlem sayısı arttıkça risk düşer)
+                            # 1 işlem = %75, 2 işlem = %55, 3 işlem = %35 vb.
+                            churn_risk = max(10, 95 - (islem_sayisi * 20))
+                            risk_class = "churn-high" if churn_risk >= 50 else "churn-low"
+                            risk_durum = "YÜKSEK RİSK (Kaybedilebilir)" if churn_risk >= 50 else "DÜŞÜK RİSK (Sadık)"
+                            
+                            c_ltv1, c_ltv2, c_ltv3 = st.columns(3)
+                            with c_ltv1:
+                                st.markdown(f"<div style='text-align:center; padding: 15px; border: 1px solid #333; border-radius: 8px;'><h4>Toplam İşlem</h4><h2>{islem_sayisi} Adet</h2></div>", unsafe_allow_html=True)
+                            with c_ltv2:
+                                st.markdown(f"<div style='text-align:center; padding: 15px; border: 1px solid #333; border-radius: 8px; background-color: #1a2980;'><h4>💰 LTV (Net Kâr)</h4><h2 style='color:#00ff7f;'>{int(ltv_degeri):,} TL</h2></div>", unsafe_allow_html=True)
+                            with c_ltv3:
+                                st.markdown(f"<div style='text-align:center; padding: 15px; border: 1px solid #333; border-radius: 8px;'><h4>⚠️ Churn Riski</h4><h2 class='{risk_class}'>%{churn_risk}</h2></div>", unsafe_allow_html=True)
+                            
+                            st.markdown("---")
+                            st.subheader("🤖 Gemini Mikroekonomik Satış Stratejisi")
+                            
+                            prompt = f"""Sen bir sigorta şirketinin baş ekonomisti ve aktüerisin. 
+Müşteri: {secilen_musteri}
+Toplam Ciro: {toplam_ciro} TL
+Yaşam Boyu Değeri (LTV - Bize bıraktığı net kâr): {ltv_degeri} TL
+İşlem Sayısı: {islem_sayisi}
+Hesaplanan Churn (Bizi Terk Etme) Riski: %{churn_risk} ({risk_durum})
+
+Lütfen bu veriler ışığında mikroekonomik bir analiz yap. Bu müşterinin 'Fiyat Duyarlılığını' (Price Elasticity) ve 'Müşteri Elde Tutma Maliyetini' (Customer Retention Cost) göz önünde bulundurarak, bu müşteriyi kaybetmemek veya daha fazla kâr etmek için satış ekibine tam olarak ne kadarlık bir "Özel İskonto/Promosyon" tanımlamaları gerektiğini ve telefonda nasıl bir taktik izlemeleri gerektiğini söyle."""
+                            
                             try:
-                                st.success(f"**{secilen_musteri}** için profilleme tamamlandı!")
-                                st.info(client.models.generate_content(model=TEXT_MODEL, contents=prompt).text)
-                            except Exception as e: st.error(f"Hata: {e}")
+                                ai_rapor = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                                st.info(ai_rapor)
+                            except Exception as e:
+                                st.error(f"Yapay Zeka bağlantı hatası: {e}")
+
         except Exception as e: st.warning(f"Hata: {e}")
 
 elif sayfa == "💸 Gider Yönetimi" and st.session_state.rol == "Admin":
