@@ -37,6 +37,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- KLASÖR KONTROLLERİ ---
+BELGELER_KLASORU = "belgeler"
+EVRAK_KASASI_KLASORU = "evrak_kasasi"
+if not os.path.exists(BELGELER_KLASORU): os.makedirs(BELGELER_KLASORU)
+if not os.path.exists(EVRAK_KASASI_KLASORU): os.makedirs(EVRAK_KASASI_KLASORU)
+
 # --- API VE GÜVENLİK AYARLARI ---
 api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
 if not api_key:
@@ -47,7 +53,6 @@ client = genai.Client(api_key=api_key)
 VISION_MODEL = 'gemini-2.5-flash'
 TEXT_MODEL = 'gemini-2.5-flash'
 HAFIZA_DOSYASI = "vektor_hafizasi.pkl"
-BELGELER_KLASORU = "belgeler"
 
 # --- GOOGLE SHEETS BAĞLANTISI ---
 @st.cache_resource
@@ -84,6 +89,11 @@ def sheets_baglantisi_kur():
         except:
             ws_gider = sh.add_worksheet(title="Şirket Giderleri", rows="1000", cols="20")
             ws_gider.append_row(["Tarih", "Gider Kalemi", "Kategori", "Tutar", "Ekleyen"])
+        # YENİ: Evrak Kasası Sekmesi
+        try: ws_evrak = sh.worksheet("Evrak Kasası")
+        except:
+            ws_evrak = sh.add_worksheet(title="Evrak Kasası", rows="1000", cols="20")
+            ws_evrak.append_row(["Tarih", "Müşteri Adı", "Plaka", "Evrak Tipi", "Dosya Adı", "Ekleyen"])
         return sh
     except Exception as e:
         st.error(f"Google Sheets Bağlantı Hatası: {e}")
@@ -165,7 +175,6 @@ def benzerlik_hesapla(v1, v2):
     return dot_product / (mag1 * mag2)
 
 def hafizayi_olustur_ve_kaydet():
-    if not os.path.exists(BELGELER_KLASORU): os.makedirs(BELGELER_KLASORU); st.stop()
     pdf_dosyalari = [f for f in os.listdir(BELGELER_KLASORU) if f.endswith('.pdf')]
     if not pdf_dosyalari: return []
     tam_metin = ""
@@ -411,8 +420,6 @@ if st.session_state.rol in ["Admin", "Satis"]:
                 for f in huni:
                     if str(f.get("Aşama", "")) not in ["Kazanıldı", "İptal Edildi"]: firsat_sayisi += 1
             except: pass
-            
-            # YENİ: Churn Riski Taşıyanları Bul (Vadesine 30 gün kalmış ve 1'den fazla poliçesi olan VIP'ler)
             try:
                 policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
                 df_pol = pd.DataFrame(policeler)
@@ -439,14 +446,15 @@ st.sidebar.markdown("---")
 
 if st.session_state.rol in ["Admin", "Satis"]:
     st.sidebar.title("Modüller")
-    # YENİ: Profilleme menüsü LTV ve Churn olarak değiştirildi
-    menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏥 Sağlık (TSS/ÖSS)", "🏢 Kurumsal Filo (B2B)", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı & Süreç Yönetimi", "⚖️ Karşılaştırma"]
+    # YENİ: "🗄️ Dijital Evrak Kasası" Eklendi
+    menu_secenekleri = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "🏥 Sağlık (TSS/ÖSS)", "🏢 Kurumsal Filo (B2B)", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı & Süreç Yönetimi", "🗄️ Dijital Evrak Kasası", "⚖️ Karşılaştırma"]
     if st.session_state.rol == "Admin":
         menu_secenekleri.extend(["⏰ Vade & Yenileme", "🎯 Kampanya Motoru", "📈 LTV & Churn Analizi", "💸 Gider Yönetimi", "📊 Finansal Dashboard"])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 else:
     st.sidebar.title("Müşteri Paneli")
-    menu_secenekleri = ["🏠 Poliçelerim", "🚗 Hasar Bildir & Takip Et"]
+    # YENİ: "🗄️ Evrak Kasam" Eklendi
+    menu_secenekleri = ["🏠 Poliçelerim", "🚗 Hasar Bildir & Takip Et", "🗄️ Evrak Kasam"]
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 
 st.sidebar.markdown("---")
@@ -501,7 +509,7 @@ elif sayfa == "🚗 Hasar Bildir & Takip Et" and st.session_state.rol == "Muster
         for idx, img in enumerate(h_gorseller[:3]): gorsel_sutunlari[idx].image(img, use_container_width=True)
     if st.button("🔍 Hasar Raporunu Oluştur ve Acenteme Gönder", type="primary", use_container_width=True):
         if h_gorseller:
-            with st.spinner("Yapay zeka fotoğrafları inceliyor..."):
+            with st.spinner("Yapay zeka fotoğrafları inceliyor, rapor hazırlanıyor..."):
                 analiz = kaza_analizi_yap(h_gorseller, st.session_state.musteri_plaka, st.session_state.kullanici_adi)
                 st.success("Rapor başarıyla oluşturuldu ve Grimset Studio'ya iletildi!")
                 st.info(analiz)
@@ -510,6 +518,44 @@ elif sayfa == "🚗 Hasar Bildir & Takip Et" and st.session_state.rol == "Muster
                     st.rerun()
                 except Exception as e: pass
         else: st.warning("Lütfen en az bir kaza fotoğrafı yükleyin.")
+
+# YENİ: MÜŞTERİ KASASI (MÜŞTERİ GÖRÜNÜMÜ)
+elif sayfa == "🗄️ Evrak Kasam" and st.session_state.rol == "Musteri":
+    st.title("🗄️ Dijital Evrak Kasam")
+    st.markdown("Grimset Studio güvencesiyle saklanan size ait ruhsat, kimlik ve geçmiş belgelerinize buradan 7/24 ulaşabilirsiniz.")
+    st.markdown("---")
+    
+    if sh:
+        try:
+            evraklar = sh.worksheet("Evrak Kasası").get_all_records()
+            benim_evraklarim = [e for e in evraklar if str(e.get("Plaka", "")).replace(" ", "").upper() == st.session_state.musteri_plaka]
+            
+            if not benim_evraklarim:
+                st.info("Kasanızda şu an kayıtlı bir evrak bulunmuyor.")
+            else:
+                col_e1, col_e2, col_e3 = st.columns(3)
+                cols = [col_e1, col_e2, col_e3]
+                
+                for idx, evrak in enumerate(benim_evraklarim):
+                    dosya_yolu = os.path.join(EVRAK_KASASI_KLASORU, evrak.get("Dosya Adı", ""))
+                    
+                    with cols[idx % 3]:
+                        with st.container(border=True):
+                            st.markdown(f"**📑 {evrak.get('Evrak Tipi', 'Belge')}**")
+                            st.caption(f"Tarih: {evrak.get('Tarih', '')}")
+                            
+                            if os.path.exists(dosya_yolu):
+                                if dosya_yolu.lower().endswith(('.png', '.jpg', '.jpeg')):
+                                    st.image(dosya_yolu, use_container_width=True)
+                                    with open(dosya_yolu, "rb") as file:
+                                        btn = st.download_button("📥 İndir", data=file, file_name=evrak.get("Dosya Adı"), mime="image/png", key=f"dl_m_{idx}")
+                                elif dosya_yolu.lower().endswith('.pdf'):
+                                    with open(dosya_yolu, "rb") as file:
+                                        btn = st.download_button("📄 PDF İndir", data=file, file_name=evrak.get("Dosya Adı"), mime="application/pdf", key=f"dl_m_{idx}")
+                            else:
+                                st.error("⚠️ Dosya sunucuda bulunamadı.")
+        except Exception as e:
+            st.error("Evraklar çekilirken bir hata oluştu.")
 
 # ----------------- PERSONEL/ADMİN SAYFALARI -----------------
 elif sayfa == "📋 Kayıt & Ayıklama":
@@ -897,6 +943,100 @@ elif sayfa == "🚗 Hasar Asistanı & Süreç Yönetimi":
         except Exception as e:
             st.warning(f"Hasar dosyaları çekilirken bir hata oluştu: {e}")
 
+# YENİ MODÜL: MÜŞTERİ DİJİTAL EVRAK KASASI (ADMİN/SATIŞ EKRANI)
+elif sayfa == "🗄️ Dijital Evrak Kasası":
+    st.title("🗄️ Müşteri Dijital Evrak Kasası (Cloud Vault)")
+    st.markdown("Müşterilerinize ait kimlik, ruhsat, poliçe veya sözleşme dosyalarını şifreli bir şekilde dijital kasaya yükleyin.")
+    st.markdown("---")
+    
+    if sh:
+        try:
+            musteriler = sh.worksheet("Müşteri Portföyü").get_all_records()
+            if not musteriler:
+                st.warning("Sistemde kayıtlı müşteri bulunmuyor.")
+            else:
+                df_musteri = pd.DataFrame(musteriler)
+                # Müşterileri Plaka - İsim formatında listeleme
+                musteri_secenekleri = df_musteri.apply(lambda x: f"{str(x.get('Plaka', ''))} - {str(x.get('Müşteri Adı', ''))}", axis=1).unique()
+                
+                secilen_musteri_bilgi = st.selectbox("Evrak Yüklenecek veya Görüntülenecek Müşteriyi Seçin:", musteri_secenekleri)
+                
+                if secilen_musteri_bilgi:
+                    secilen_plaka = secilen_musteri_bilgi.split(" - ")[0].strip()
+                    secilen_isim = secilen_musteri_bilgi.split(" - ")[1].strip()
+                    
+                    st.markdown("---")
+                    c_kasa1, c_kasa2 = st.columns([1, 1.5], gap="large")
+                    
+                    with c_kasa1:
+                        st.subheader("📤 Kasaya Evrak Yükle")
+                        with st.form("evrak_yukle_form"):
+                            evrak_tipi = st.selectbox("Evrak Tipi", ["Ruhsat", "Kimlik (Önlü Arkalı)", "Ehliyet", "Eski Poliçe", "Araç Fotoğrafı", "Sözleşme / Diğer"])
+                            yuklenen_evrak = st.file_uploader("Dosyayı Seçin", type=["jpg", "jpeg", "png", "pdf"])
+                            
+                            if st.form_submit_button("Güvenli Kasaya Ekle"):
+                                if yuklenen_evrak:
+                                    # Benzersiz dosya ismi oluştur (Tarih_Saat_Plaka_OrjinalIsim)
+                                    zaman_etiketi = datetime.now().strftime("%Y%m%d%H%M%S")
+                                    yeni_dosya_adi = f"{secilen_plaka}_{zaman_etiketi}_{yuklenen_evrak.name}"
+                                    dosya_kayit_yolu = os.path.join(EVRAK_KASASI_KLASORU, yeni_dosya_adi)
+                                    
+                                    # Dosyayı sunucunun "evrak_kasasi" klasörüne fiziksel olarak kaydet
+                                    with open(dosya_kayit_yolu, "wb") as f:
+                                        f.write(yuklenen_evrak.getbuffer())
+                                        
+                                    # Google Sheets'e meta veriyi kaydet
+                                    sh.worksheet("Evrak Kasası").append_row([
+                                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                        secilen_isim,
+                                        secilen_plaka,
+                                        evrak_tipi,
+                                        yeni_dosya_adi,
+                                        st.session_state.kullanici_adi
+                                    ])
+                                    
+                                    st.success(f"{evrak_tipi} dosyası kasaya başarıyla kilitlendi!")
+                                    st.rerun()
+                                else:
+                                    st.warning("Lütfen yüklenecek bir dosya seçin.")
+
+                    with c_kasa2:
+                        st.subheader("📂 Müşterinin Kasasındaki Evraklar")
+                        
+                        try:
+                            tum_evraklar = sh.worksheet("Evrak Kasası").get_all_records()
+                            bu_musterinin_evraklari = [e for e in tum_evraklar if str(e.get("Plaka", "")) == secilen_plaka]
+                            
+                            if not bu_musterinin_evraklari:
+                                st.info("Bu müşterinin kasasında henüz bir evrak bulunmuyor.")
+                            else:
+                                for evrak in reversed(bu_musterinin_evraklari):
+                                    with st.container(border=True):
+                                        c_liste1, c_liste2 = st.columns([3, 1])
+                                        with c_liste1:
+                                            st.markdown(f"**📑 {evrak.get('Evrak Tipi', '')}**")
+                                            st.caption(f"Tarih: {evrak.get('Tarih', '')} | Ekleyen: {evrak.get('Ekleyen', '')}")
+                                        with c_liste2:
+                                            dosya_adi = evrak.get('Dosya Adı', '')
+                                            dosya_yolu = os.path.join(EVRAK_KASASI_KLASORU, dosya_adi)
+                                            
+                                            if os.path.exists(dosya_yolu):
+                                                with open(dosya_yolu, "rb") as file:
+                                                    mime_type = "application/pdf" if dosya_adi.lower().endswith(".pdf") else "image/png"
+                                                    st.download_button(
+                                                        label="İndir", 
+                                                        data=file, 
+                                                        file_name=dosya_adi, 
+                                                        mime=mime_type,
+                                                        key=f"dl_{dosya_adi}"
+                                                    )
+                                            else:
+                                                st.error("Dosya sunucuda yok.")
+                        except Exception as e:
+                            st.warning("Evraklar listelenirken hata oluştu.")
+        except Exception as e:
+            st.warning(f"Bağlantı hatası: {e}")
+
 elif sayfa == "⚖️ Karşılaştırma":
     st.title("⚖️ Teklif Karşılaştırma Analizi")
     col1, col2 = st.columns(2)
@@ -976,7 +1116,6 @@ elif sayfa == "🎯 Kampanya Motoru" and st.session_state.rol == "Admin":
                 else: st.warning("Plaka eşleşmesi yapılamadı.")
         except Exception as e: st.warning(f"Hata: {e}")
 
-# YENİ MODÜL: MİKROEKONOMİK LTV VE CHURN
 elif sayfa == "📈 LTV & Churn Analizi" and st.session_state.rol == "Admin":
     st.title("📈 Mikroekonomik LTV ve Churn (Ayrılma) Analizi")
     st.markdown("Müşterinin Yaşam Boyu Değerini (LTV) hesaplayın ve fiyat duyarlılığına göre şirketi terk etme (Churn) riskini tespit edip strateji üretin.")
@@ -997,13 +1136,9 @@ elif sayfa == "📈 LTV & Churn Analizi" and st.session_state.rol == "Admin":
                     if st.button("🧠 LTV ve Churn Riskini Hesapla", type="primary", use_container_width=True):
                         with st.spinner("Mikroekonomik veriler derleniyor..."):
                             m_data = df_police[df_police['Müşteri Adı'] == secilen_musteri]
-                            
                             islem_sayisi = len(m_data)
-                            
-                            # Toplam Ciro Hesaplama
                             toplam_ciro = m_data['Toplam Prim'].apply(lambda x: int(str(x).replace(' TL', '').replace(',', '')) if str(x).replace(' TL', '').replace(',', '').isdigit() else 0).sum()
                             
-                            # Toplam Komisyon Hesaplama (LTV)
                             def temizle_komisyon(x):
                                 try: return int(str(x).replace(' TL', '').replace(',', '').replace('.', ''))
                                 except: return 0
@@ -1011,10 +1146,8 @@ elif sayfa == "📈 LTV & Churn Analizi" and st.session_state.rol == "Admin":
                             if 'Net Komisyon' in m_data.columns:
                                 ltv_degeri = m_data['Net Komisyon'].apply(temizle_komisyon).sum()
                             else:
-                                ltv_degeri = toplam_ciro * 0.10 # Varsayılan
+                                ltv_degeri = toplam_ciro * 0.10
                                 
-                            # Basit Churn Riski Algoritması (İşlem sayısı arttıkça risk düşer)
-                            # 1 işlem = %75, 2 işlem = %55, 3 işlem = %35 vb.
                             churn_risk = max(10, 95 - (islem_sayisi * 20))
                             risk_class = "churn-high" if churn_risk >= 50 else "churn-low"
                             risk_durum = "YÜKSEK RİSK (Kaybedilebilir)" if churn_risk >= 50 else "DÜŞÜK RİSK (Sadık)"
@@ -1030,20 +1163,11 @@ elif sayfa == "📈 LTV & Churn Analizi" and st.session_state.rol == "Admin":
                             st.markdown("---")
                             st.subheader("🤖 Gemini Mikroekonomik Satış Stratejisi")
                             
-                            prompt = f"""Sen bir sigorta şirketinin baş ekonomisti ve aktüerisin. 
-Müşteri: {secilen_musteri}
-Toplam Ciro: {toplam_ciro} TL
-Yaşam Boyu Değeri (LTV - Bize bıraktığı net kâr): {ltv_degeri} TL
-İşlem Sayısı: {islem_sayisi}
-Hesaplanan Churn (Bizi Terk Etme) Riski: %{churn_risk} ({risk_durum})
-
-Lütfen bu veriler ışığında mikroekonomik bir analiz yap. Bu müşterinin 'Fiyat Duyarlılığını' (Price Elasticity) ve 'Müşteri Elde Tutma Maliyetini' (Customer Retention Cost) göz önünde bulundurarak, bu müşteriyi kaybetmemek veya daha fazla kâr etmek için satış ekibine tam olarak ne kadarlık bir "Özel İskonto/Promosyon" tanımlamaları gerektiğini ve telefonda nasıl bir taktik izlemeleri gerektiğini söyle."""
-                            
+                            prompt = f"""Sen bir sigorta şirketinin baş ekonomisti ve aktüerisin. Müşteri: {secilen_musteri}, Toplam Ciro: {toplam_ciro} TL, LTV: {ltv_degeri} TL, İşlem Sayısı: {islem_sayisi}, Churn Riski: %{churn_risk} ({risk_durum}). Lütfen bu müşteriyi kaybetmemek için satış ekibine tam olarak ne kadarlık bir iskonto/promosyon tanımlamaları gerektiğini ve telefonda nasıl bir taktik izlemeleri gerektiğini söyle."""
                             try:
                                 ai_rapor = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
                                 st.info(ai_rapor)
-                            except Exception as e:
-                                st.error(f"Yapay Zeka bağlantı hatası: {e}")
+                            except Exception as e: st.error(f"Yapay Zeka bağlantı hatası: {e}")
 
         except Exception as e: st.warning(f"Hata: {e}")
 
