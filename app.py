@@ -158,6 +158,47 @@ def pdf_olustur(isim, plaka, tip, tem, prim, piyasa=None, kazanc=None, ref=None,
 def komisyon_hesapla(prim, tip):
     oran = 0.25 if tip in ["Seyahat Sağlık (Yurt Dışı)", "Elektronik Cihaz (Telefon/Laptop)", "Evcil Hayvan (Pati) Acil Durum", "Kısa Süreli Kiralık Araç Kaskosu"] else (0.15 if tip in ["Kasko", "Filo Kasko", "DASK", "Tamamlayıcı Sağlık Sigortası (TSS)", "Özel Sağlık Sigortası (ÖSS)"] else 0.08 if "Trafik" in tip else 0.10)
     return int(prim * oran)
+def filo_pdf_olustur(firma_adi, plakalar, police_tipi, toplam_prim):
+    """B2B Kurumsal Filo teklifleri için çoklu araç içeren özel PDF üretir."""
+    try:
+        from fpdf import FPDF
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        
+        # FPDF için Türkçe karakter temizleme
+        def tr(text):
+            tr_map = {'ı': 'i', 'i': 'i', 'ğ': 'g', 'Ğ': 'G', 'ü': 'u', 'Ü': 'U', 'ş': 's', 'Ş': 'S', 'ö': 'o', 'Ö': 'O', 'ç': 'c', 'Ç': 'C'}
+            for t, e in tr_map.items(): text = text.replace(t, e)
+            return text
+
+        # Başlık ve Şirket Bilgileri
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(200, 10, txt="GRIMSET STUDIO - B2B FILO TEKLIFI", ln=True, align='C')
+        pdf.ln(10)
+        
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, txt=tr(f"Kurumsal Firma: {firma_adi}"), ln=True)
+        pdf.cell(200, 10, txt=tr(f"Police Tipi: {police_tipi}"), ln=True)
+        pdf.cell(200, 10, txt=tr(f"Toplam Arac: {len(plakalar)} Adet"), ln=True)
+        
+        # Fiyatı daha büyük ve belirgin yaz
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(200, 10, txt=tr(f"Toplam Prim Tutari: {toplam_prim:,} TL"), ln=True)
+        pdf.ln(5)
+        
+        # Plaka Listesi
+        pdf.set_font("Arial", size=11)
+        plakalar_str = ", ".join(plakalar)
+        pdf.multi_cell(0, 10, txt=tr(f"Kapsamdaki Plakalar: {plakalar_str}"))
+        
+        pdf.ln(10)
+        pdf.set_font("Arial", 'I', 10)
+        pdf.multi_cell(0, 10, txt=tr("* Bu teklif Grimset Studio tarafindan yapay zeka denetimi ve SEDDK regulasyonlari dikkate alinarak hazirlanmistir. 30 gun gecerlidir."))
+        
+        return pdf.output(dest="S").encode("latin-1")
+    except Exception as e:
+        return b"PDF olusturulurken bir hata meydana geldi."
 def get_status_color(d): return {"İnceleniyor": "#f39c12", "Eksper Atandı": "#3498db", "Onarımda": "#9b59b6", "Ödeme Bekleniyor": "#e67e22", "Tamamlandı": "#2ecc71", "Bekliyor": "#e74c3c", "Onaylandı": "#2ecc71"}.get(d, "#95a5a6")
 def temizle_fiyat(x):
     try: return int(str(x).replace(' TL', '').replace(',', '').replace('.', ''))
