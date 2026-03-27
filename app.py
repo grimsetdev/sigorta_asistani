@@ -850,38 +850,138 @@ SKOR: [1-100 arası sayı] - [Kısa 1 cümlelik neden]"""
             else: st.info("Takip edilen fırsat yok. Sisteme yeni adaylar ekleyin.")
         except Exception as e: st.warning(f"Bağlantı hatası: {e}")
 
+# GÜNCEL MODÜL: 🚗 HASAR ASİSTANI & OTONOM EKSPER (MALIYET ÇIKARIMI)
 elif sayfa == "🚗 Hasar Asistanı & Süreç Yönetimi":
-    st.title("🚗 Kaza ve Hasar Destek & Süreç Yönetimi (AI Suistimal Kontrol)")
+    st.title("🚗 Kaza Destek & AI Otonom Eksper (Maliyet Çıkarımı)")
     st.markdown("---")
-    st.markdown("### ➕ Yeni Hasar Analizi ve Dosya Açılışı")
-    h_col1, h_col2 = st.columns([1, 2], gap="large")
-    with h_col1:
-        h_isim = st.text_input("Müşteri Adı Soyadı")
-        h_plaka = st.text_input("Araç Plakası")
-        h_beyan = st.text_area("Müşteri Beyanı / Kaza Senaryosu", placeholder="Örn: Kırmızı ışıkta dururken bana arkadan çarptılar...")
-        h_gorseller = st.file_uploader("Kaza ve Tutanak Fotoğrafları", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
-        
-        if h_gorseller:
-            gorsel_sutunlari = st.columns(min(len(h_gorseller), 3))
-            for idx, img in enumerate(h_gorseller[:3]): gorsel_sutunlari[idx].image(img, use_container_width=True)
+    
+    # === HASAR MODÜLÜNÜN KALBİ (YENİ EKSPER FONKSİYONU) ===
+    def ai_eksper_maliyet_analizi(y_gorseller, y_beyan, y_plaka, y_isim):
+        """Gemini Vision modelini kullanarak görselden parça tespiti ve simüle maliyet çıkarımı yapar."""
+        prompt = f"""Sen elit bir AI Otomotiv Eksperisin. Plaka: {y_plaka}, Müşteri: {y_isim}, Beyan: '{y_beyan}'.
+Yüklenen hasar fotoğraflarını ve beyanı analiz et. Dış karoser hasarlarını tespit et, parça değişimi veya onarım gerekliliğini belirle.
+
+Lütfen bana SADECE geçerli JSON formatında şu anahtarlarla yanıt ver (başka hiçbir şey yazma):
+{{
+  "tespit_edilen_hasar": "Analiz özeti (Turan-Duman davası mantığıyla)",
+  "frau_analizi": "Beyan ve fotoğraflar uyumlu mu, şüphe var mı?",
+  "maliyet_ozeti": {{
+    "toplam_tl": 0,
+    "isclik_saati": 0,
+    "parca_listesi": [
+      {{"parca": "Ön Tampon", "islem": "Değişim", "maliyet_tl": 15000}},
+      {{"parca": "Sağ Far", "islem": "Değişim", "maliyet_tl": 12500}}
+    ]
+  }}
+}}
+
+Maliyetleri belirlerken *Simüle Edilmiş* ortalama Türkiye yedek parça ve işçilik fiyatlarını baz al (Örn: Tampon 15bin, Far 10bin, Boya panel başı 5bin, İşçilik saati 1000 TL).
+"""
+        try:
+            # Gorselleri Vision modeline gore hazirla (Streamlit UploadedFile -> bytes)
+            formatted_images = []
+            import PIL.Image
+            for img_file in y_gorseller:
+                # PIL Image nesnesine ceviriyoruz
+                img = PIL.Image.open(img_file)
+                formatted_images.append(img)
             
-        if st.button("🔍 Hasarı ve Suistimal Riskini Analiz Et", type="primary", use_container_width=True):
-            if h_isim and h_plaka and h_gorseller and h_beyan:
-                with st.spinner("Adli bilişim yapay zekası fiziksel hasarı ve müşteri beyanını çapraz sorguluyor..."):
-                    st.session_state.son_kaza_analizi = kaza_analizi_yap(h_gorseller, h_plaka, h_isim, h_beyan)
-            else: st.warning("İsim, Plaka, Beyan ve Fotoğraf zorunludur.")
+            # Gemini Vision (GenAI API v1beta) cagrisi
+            response = client.models.generate_content(
+                model=VISION_MODEL, # gemini-1.5-flash-8b veya gemini-1.5-flash
+                contents=[prompt, *formatted_images]
+            )
+            
+            # JSON Parse islemi
+            import json
+            raw_text = response.text.replace("```json", "").replace("```", "").strip()
+            
+            # Eger AI JSON disinda bir sey yazarsa diye koruma
+            try: return json.loads(raw_text)
+            except: 
+                # Hata durumunda nötr bir JSON dön
+                return {"tespit_edilen_hasar": raw_text, "frau_analizi": "Bilinmiyor", "maliyet_ozeti": {"toplam_tl": 0, "parca_listesi": []}}
+            
+        except Exception as e:
+            return {"tespit_edilen_hasar": f"AI Analiz Hatası: {e}", "frau_analizi": "Hata", "maliyet_ozeti": {"toplam_tl": 0, "parca_listesi": []}}
+
+    # === ARAYÜZ ===
+    st.markdown("### ➕ Yeni Hasar Dosyası & Otonom Ekspertiz")
+    h_col1, h_col2 = st.columns([1, 1.8], gap="large")
+    
+    with h_col1:
+        with st.container(border=True):
+            h_isim = st.text_input("Müşteri Adı Soyadı")
+            h_plaka = st.text_input("Araç Plakası").replace(" ", "").upper()
+            h_beyan = st.text_area("Müşteri Beyanı / Kaza Senaryosu", placeholder="Örn: Kırmızı ışıkta dururken bana arkadan çarptılar...")
+            h_gorseller = st.file_uploader("Hasar Fotoğrafları (En az 3 adet)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+            
+            if h_gorseller:
+                gorsel_sutunlari = st.columns(min(len(h_gorseller), 4))
+                for idx, img in enumerate(h_gorseller[:4]): 
+                    gorsel_sutunlari[idx].image(img, use_container_width=True)
+                
+            if st.button("🔍 AI Otonom Eksperi Başlat", type="primary", use_container_width=True):
+                if h_isim and h_plaka and h_gorseller and len(h_gorseller) >= 3 and h_beyan:
+                    with st.spinner("Gemini Görsel Zekası fotoğrafları analiz edip parça maliyetlerini çıkarıyor..."):
+                        # Analizi Baslat
+                        analiz_json = ai_eksper_maliyet_analizi(h_gorseller, h_beyan, h_plaka, h_isim)
+                        
+                        # Toplam Maliyeti de cekecek sekilde kaydet
+                        m_ozet = analiz_json.get("maliyet_ozeti", {})
+                        toplam_tutar = int(m_ozet.get("toplam_tl", 0))
+                        hasar_metni = f"**Tespit:** {analiz_json.get('tespit_edilen_hasar')}\n\n**Fraud:** {analiz_json.get('frau_analizi')}\n\n**Maliyet:** {toplam_tutar} TL"
+                        
+                        st.session_state.son_eksper_json = analiz_json
+                        st.session_state.son_eksper_tutar = toplam_tutar
+                        st.session_state.son_eksper_kayit_metni = hasar_metni
+                        
+                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "AI Ekspertiz", f"Plaka: {h_plaka}, Tutar: {toplam_tutar} TL")
+                        except: pass
+                else: st.warning("Ekspertiz için İsim, Plaka, Beyan ve En Az 3 Fotoğraf zorunludur.")
             
     with h_col2:
-        if "son_kaza_analizi" in st.session_state and st.session_state.son_kaza_analizi:
-            st.success("Rapor Başarıyla Oluşturuldu!")
-            st.info(st.session_state.son_kaza_analizi)
-            if st.button("💾 Hasar Dosyasını Aç (Kaydet)"):
+        if "son_eksper_json" in st.session_state:
+            s_json = st.session_state.son_eksper_json
+            s_tutar = st.session_state.son_eksper_tutar
+            m_ozet = s_json.get("maliyet_ozeti", {})
+            parcalar = m_ozet.get("parca_listesi", [])
+            
+            # === AI EKSPER RAPORU GÖSTERİMİ ===
+            st.success("🤖 AI Otonom Eksper Raporu Hazır!")
+            
+            # Maliyet Metric Kartlari
+            c_e1, c_e2 = st.columns(2)
+            c_e1.metric("Tahmini Toplam Onarım Maliyeti", f"{s_tutar:,} TL", delta="Simüle Edilmiş Piyasa Verisi")
+            c_e2.markdown(f"**Suistimal (Fraud) Analizi:**\n{s_json.get('frau_analizi')}")
+            
+            st.markdown("---")
+            
+            # Detayli Parca Listesi (Tablo)
+            st.markdown("#### 🛠️ Hasarlı Parça ve İşlem Detayları")
+            if parcalar:
+                # JSON listesini DataFrame'e cevirip guzelce goster
+                df_parca = pd.DataFrame(parcalar)
+                # Sütun isimlerini Turkcelestir
+                df_parca.columns = ["Parça Adı", "Yapılacak İşlem", "Tahmini Maliyet (TL)"]
+                st.dataframe(df_parca, use_container_width=True)
+            else:
+                st.info("AI herhangi bir dış karoser hasarı tespit edemedi.")
+                
+            with st.expander("🔬 AI Teknik Analiz Detayı (Nötr Dil)"):
+                st.write(s_json.get("tespit_edilen_hasar"))
+                
+            st.markdown("---")
+            if st.button("💾 Hasar Dosyasını Aç ve Kaydet", use_container_width=True):
                 try:
-                    sh.worksheet("Hasar Kayıtları").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), h_isim, h_plaka, st.session_state.son_kaza_analizi, "İnceleniyor"])
-                    try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Hasar Dosyası Açıldı", f"Plaka: {h_plaka}")
+                    zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    sh.worksheet("Hasar Kayıtları").append_row([zaman, h_isim, h_plaka, st.session_state.son_eksper_kayit_metni, "İnceleniyor"])
+                    try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Hasar Dosyası Kaydedildi", f"Plaka: {h_plaka}, Tutar: {s_tutar} TL")
                     except: pass
-                    st.success("Dosya açıldı ve sisteme kaydedildi!")
-                except Exception as e: st.error(f"Hata: {e}")
+                    st.success("Hasar dosyası otonom eksper raporuyla birlikte kaydedildi!")
+                    # State'i temizle
+                    del st.session_state.son_eksper_json
+                except Exception as e: st.error(f"Kayıt Hatası: {e}")
 
     st.markdown("---")
     st.markdown("### 📂 Aktif Hasar Dosyaları ve Süreç Takibi")
@@ -896,10 +996,15 @@ elif sayfa == "🚗 Hasar Asistanı & Süreç Yönetimi":
                     if len(h_row) >= 4:
                         r_tar, r_isim, r_plaka, r_rapor = h_row[0], h_row[1], h_row[2], h_row[3]
                         r_durum = h_row[4] if len(h_row) >= 5 else "İnceleniyor"
+                        
+                        # Maliyet bilgisini rapor metninden cımbızla cek
+                        maliyet_match = re.search(r'Maliyet:\s*([\d,.]+)\s*TL', r_rapor)
+                        tutar_yazisi = maliyet_match.group(0) if maliyet_match else "Maliyet Hesaplanmadı"
+                        
                         renk = get_status_color(r_durum)
-                        with st.expander(f"{r_isim} - Plaka: {r_plaka} | Tarih: {r_tar}"):
+                        with st.expander(f"{r_isim} - Plaka: {r_plaka} | Tarih: {r_tar} | {tutar_yazisi}"):
                             st.markdown(f"<span class='status-badge' style='background-color: {renk};'>Mevcut Durum: {r_durum}</span>", unsafe_allow_html=True)
-                            st.write(f"**Hasar Raporu:**\n{r_rapor}")
+                            st.write(f"**Hasar Raporu & AI Maliyet Çıkarımı:**\n{r_rapor}")
                             secenekler = ["İnceleniyor", "Eksper Atandı", "Onarımda", "Ödeme Bekleniyor", "Tamamlandı"]
                             secili_index = secenekler.index(r_durum) if r_durum in secenekler else 0
                             yeni_durum = st.selectbox("Müşteri Portalında Görünecek Durumu Güncelle", secenekler, index=secili_index, key=f"hdurum_{gercek_idx}")
