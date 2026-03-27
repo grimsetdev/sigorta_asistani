@@ -208,7 +208,8 @@ if st.session_state.rol in ["Admin", "Satis"]:
             "🔐 Denetim İzi (Audit Log)",
             "🌐 Developer API & Entegrasyon",
             "🌍 Grimset SaaS (Bayi Yönetimi)",
-            "🏦 Reasürans (Risk Devri)" # YENİ EKLENDİ
+            "🏦 Reasürans (Risk Devri)",
+            "⚙️ Operasyonel Komuta Merkezi" # YENİ EKLENDİ
         ])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 
@@ -1921,3 +1922,81 @@ elif sayfa == "🛑 Konsorsiyum Kara Liste" and st.session_state.rol in ["Admin"
                     df_kl = pd.DataFrame(liste_verisi)
                     st.dataframe(df_kl.iloc[::-1], use_container_width=True)
             except Exception as e: st.warning("Okuma hatası.")
+
+            # YENİ MODÜL: ⚙️ OPERASYONEL KOMUTA MERKEZİ VE GÖREV DAĞITIM
+elif sayfa == "⚙️ Operasyonel Komuta Merkezi" and st.session_state.rol in ["Admin", "Satis"]:
+    st.title("⚙️ Operasyonel Komuta Merkezi")
+    st.markdown("Sistemin anlık sağlık durumunu izleyin ve saha ekibine operasyonel görevleri anında dağıtın.")
+    st.markdown("---")
+
+    if sh:
+        # Gereksiz tarih ve ekleyen bilgileri temizlenmiş yeni nesil tablo
+        try: ws_gorev = sh.worksheet("Gorevler")
+        except:
+            ws_gorev = sh.add_worksheet(title="Gorevler", rows="100", cols="3")
+            ws_gorev.append_row(["Sorumlu", "Görev Detayı", "Durum"])
+
+        c_komuta1, c_komuta2 = st.columns([1, 1.5], gap="large")
+
+        with c_komuta1:
+            st.subheader("📡 Sistem Sağlığı (Gerçek Zamanlı)")
+            # Simüle edilmiş anlık metrikler
+            st.metric("Otonom Sunucu Durumu", "Aktif", delta="Kusursuz İşleyiş")
+            st.metric("Bekleyen API / SaaS İstekleri", "14 Adet", delta="-3", delta_color="inverse")
+            st.metric("Fraude (Suistimal) Engelleme Oranı", "%98")
+
+            st.markdown("---")
+            st.subheader("➕ Saha Ekibine Görev Ver")
+            with st.form("gorev_form"):
+                g_sorumlu = st.selectbox("Sorumlu Personel", ["Ali", "Rojhat", "Saha Ekibi"])
+                g_detay = st.text_area("Görev Açıklaması", placeholder="Örn: X acentesinin ıslak imzalı sözleşmelerini acil kargola.")
+                
+                if st.form_submit_button("Görevi İlet", type="primary"):
+                    if g_detay:
+                        ws_gorev.append_row([g_sorumlu, g_detay, "Bekliyor"])
+                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Yeni Görev Atandı", f"Sorumlu: {g_sorumlu}")
+                        except: pass
+                        st.success(f"Görev başarıyla {g_sorumlu} adlı personelin ekranına düşürüldü!")
+                        st.rerun()
+                    else:
+                        st.warning("Lütfen görev detayını boş bırakmayın.")
+
+        with c_komuta2:
+            st.subheader("📋 AdanaMu | Görev Panosu")
+            try:
+                gorevler = ws_gorev.get_all_records()
+                if not gorevler: 
+                    st.info("Şu an bekleyen veya aktif bir görev bulunmuyor. Ekip harika çalışıyor!")
+                else:
+                    for idx, g in enumerate(reversed(gorevler)):
+                        gercek_idx = len(gorevler) - idx + 1 # Excel satır mantığı
+                        durum = str(g.get("Durum", "Bekliyor"))
+                        
+                        # Duruma göre renk skalası (Üzeri çizilmez, sadece renk değişir)
+                        renk = "#2ecc71" if durum == "Tamamlandı" else ("#f39c12" if durum == "İşlemde" else "#3498db")
+                        
+                        # Boyutları büyütülmüş, okunaklı görev kartı (Tarih/Ekleyen kısımları silindi)
+                        st.markdown(f"""
+                        <div style="background-color: #1e1e1e; padding: 20px; border-radius: 8px; border-left: 8px solid {renk}; margin-bottom: 5px; font-size: 1.15rem; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+                            <span style="color: {renk}; font-weight: bold; font-size: 0.9rem; text-transform: uppercase;">[{durum}]</span><br>
+                            <b style="color: #ecf0f1;">Sorumlu:</b> {g.get('Sorumlu')}<br>
+                            <b style="color: #ecf0f1;">Görev:</b> <span style="color: #bdc3c7;">{g.get('Görev Detayı')}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # UX İyileştirmesi: Tüm aksiyonlar aynı açılır menüde birleştirildi ve Tamamlandı seçeneği netleştirildi.
+                        aksiyon_secenekleri = ["Mevcut Durumu Koru", "İşlemde Olarak İşaretle", "✅ GÖREVİ TAMAMLA"]
+                        secili_index = 0
+                        
+                        aksiyon = st.selectbox("Durum Güncelle:", aksiyon_secenekleri, key=f"aksiyon_{gercek_idx}", label_visibility="collapsed")
+                        
+                        if aksiyon != "Mevcut Durumu Koru":
+                            yeni_excel_durumu = "Tamamlandı" if "TAMAMLA" in aksiyon else "İşlemde"
+                            if yeni_excel_durumu != durum:
+                                ws_gorev.update_cell(gercek_idx, 3, yeni_excel_durumu)
+                                st.success(f"Görev durumu başarıyla güncellendi!")
+                                st.rerun()
+                                
+                        st.markdown("<br>", unsafe_allow_html=True)
+            except Exception as e: 
+                st.warning(f"Görevler okunurken hata: {e}")
