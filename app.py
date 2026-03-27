@@ -337,26 +337,79 @@ elif sayfa == "📋 Kayıt & Ayıklama":
         st.success("KVKK Metnini müşteriye onaya sunun.")
         st.markdown(f'<a href="https://wa.me/90{st.session_state.son_tel.replace(" ","")[-10:]}?text=KVKK onayiniz icin ONAYLIYORUM yazin."><div style="background:#25D366;color:white;padding:10px;text-align:center;border-radius:5px;">📲 WhatsApp Onay İste</div></a>', unsafe_allow_html=True)
 
+# GÜNCEL MODÜL: 📝 POLİÇE ATÖLYESİ (VOICE-TO-CRM & DİNAMİK FİYATLAMA EKLENTİLİ)
 elif sayfa == "📝 Poliçe Atölyesi":
-    st.title("📝 Poliçe Atölyesi (Dinamik Rayiç & Global)")
+    st.title("📝 Poliçe Atölyesi & 🎙️ Voice-to-CRM")
+    st.markdown("Müşteriyle telefonda konuşurken asistanı açın; AI sesi dinlesin, analiz etsin ve tüm poliçe formunu sizin yerinize **otomatik doldursun!**")
     st.markdown("---")
-    secilen_dil = st.radio("🌍 Müşteri İletişim Dili (PDF ve Mesaj Şablonu)", ["Türkçe", "English", "Deutsch", "Français"], horizontal=True)
     
+    # Otonom Doldurma State'leri (Sistemin Hafızası)
+    if "ai_isim" not in st.session_state:
+        st.session_state.update({"ai_isim": "", "ai_plaka": "", "ai_marka": "Orta Sınıf (VW, Toyota, Honda)", "ai_yil": 2020, "ai_tip": "Kasko"})
+
+    # YENİ: VOICE TO CRM (SESLİ KOMUT) MODÜLÜ
+    st.subheader("🎙️ AI Çağrı Dinleme Asistanı")
+    ses_verisi = speech_to_text(language='tr-TR', start_prompt="🟢 Çağrıyı Dinlemeye Başla", stop_prompt="🛑 Dinlemeyi Bitir", use_container_width=True, just_once=True, key='voice_crm')
+    
+    if ses_verisi:
+        with st.spinner("Gemini telefon görüşmesini analiz ediyor ve verileri ayıklıyor..."):
+            prompt = f"""Sen elit bir veri ayıklama asistanısın. Şu müşteri telefon görüşmesi metninden sigorta bilgilerini çıkar.
+Metin: "{ses_verisi}"
+Sadece JSON formatında şu anahtarlarla dön (başka hiçbir açıklama yazma):
+{{"isim": "Ad Soyad", "plaka": "Araç Plakası", "marka_segmenti": "Ekonomi/Orta/Premium/Lüks", "yil": "2020", "tip": "Kasko/Zorunlu Trafik Sigortası/DASK"}}
+Eğer segmenti tam bilemezsen marka ismine bakarak 'Ekonomi', 'Orta Sınıf', 'Premium' veya 'Lüks Spor' olarak eşleştir. Bulamadığın yerleri boş bırak."""
+            try:
+                ai_json_str = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                # Temizleme
+                ai_json_str = ai_json_str.replace("```json", "").replace("```", "").strip()
+                
+                import json
+                ayiklanan = json.loads(ai_json_str)
+                
+                # Çekilen verileri State'e (Hafızaya) kaydet
+                st.session_state.ai_isim = ayiklanan.get("isim", "")
+                st.session_state.ai_plaka = ayiklanan.get("plaka", "").replace(" ", "").upper()
+                st.session_state.ai_yil = int(ayiklanan.get("yil", 2020)) if str(ayiklanan.get("yil")).isdigit() else 2020
+                
+                # Segment Eşleştirme Algoritması
+                m_seg = ayiklanan.get("marka_segmenti", "")
+                if "Ekonomi" in m_seg: st.session_state.ai_marka = "Ekonomi (Fiat, Renault, Dacia)"
+                elif "Premium" in m_seg: st.session_state.ai_marka = "Premium (Mercedes, BMW, Audi)"
+                elif "Lüks" in m_seg: st.session_state.ai_marka = "Lüks Spor (Porsche, Land Rover)"
+                else: st.session_state.ai_marka = "Orta Sınıf (VW, Toyota, Honda)"
+                
+                # Tip Eşleştirme Algoritması
+                t_tip = ayiklanan.get("tip", "")
+                if "Trafik" in t_tip: st.session_state.ai_tip = "Zorunlu Trafik Sigortası"
+                elif "DASK" in t_tip: st.session_state.ai_tip = "DASK"
+                else: st.session_state.ai_tip = "Kasko"
+                
+                st.success(f"🤖 AI Konuşmayı Çözdü: {ses_verisi} -> Form Otomatik Dolduruldu!")
+            except Exception as e:
+                st.error("Sesten metne ayıklama anlaşılamadı. Lütfen daha net konuşun.")
+
+    secilen_dil = st.radio("🌍 Müşteri İletişim Dili (PDF ve Mesaj Şablonu)", ["Türkçe", "English", "Deutsch", "Français"], horizontal=True)
     dinamik_fiyat = st.toggle("📊 Mikroekonomik Dinamik Fiyatlama (Görünmez El) Aktif Et", value=True)
     st.markdown("---")
     
     col1, col2 = st.columns([1, 1], gap="large")
     with col1:
-        p_musteri = st.text_input("Müşteri Adı Soyadı")
+        # Form değerleri artık AI'ın doldurduğu hafızadan (st.session_state) besleniyor!
+        p_musteri = st.text_input("Müşteri Adı Soyadı", value=st.session_state.ai_isim)
         p_tel = st.text_input("Telefon (WhatsApp için)")
-        p_plaka = st.text_input("Araç Plakası veya Adres Kodu (DASK)")
-        p_tip = st.selectbox("Poliçe Tipi", ["Kasko", "Zorunlu Trafik Sigortası", "DASK"])
+        p_plaka = st.text_input("Araç Plakası veya Adres Kodu (DASK)", value=st.session_state.ai_plaka)
         
-        # YENİ: DİNAMİK KASKO DEĞER MOTORU (ARAÇ BİLGİLERİ)
+        tip_index = ["Kasko", "Zorunlu Trafik Sigortası", "DASK"].index(st.session_state.ai_tip) if st.session_state.ai_tip in ["Kasko", "Zorunlu Trafik Sigortası", "DASK"] else 0
+        p_tip = st.selectbox("Poliçe Tipi", ["Kasko", "Zorunlu Trafik Sigortası", "DASK"], index=tip_index)
+        
         st.markdown("##### 🚙 Araç Değer & Rayiç Bilgileri")
         c_arac1, c_arac2 = st.columns(2)
-        p_marka = c_arac1.selectbox("Araç Markası Segmenti", ["Ekonomi (Fiat, Renault, Dacia)", "Orta Sınıf (VW, Toyota, Honda)", "Premium (Mercedes, BMW, Audi)", "Lüks Spor (Porsche, Land Rover)"])
-        p_yil = c_arac2.slider("Model Yılı", min_value=2005, max_value=2026, value=2020)
+        
+        marka_secenekler = ["Ekonomi (Fiat, Renault, Dacia)", "Orta Sınıf (VW, Toyota, Honda)", "Premium (Mercedes, BMW, Audi)", "Lüks Spor (Porsche, Land Rover)"]
+        marka_index = marka_secenekler.index(st.session_state.ai_marka) if st.session_state.ai_marka in marka_secenekler else 1
+        
+        p_marka = c_arac1.selectbox("Araç Markası Segmenti", marka_secenekler, index=marka_index)
+        p_yil = c_arac2.slider("Model Yılı", min_value=2005, max_value=2026, value=st.session_state.ai_yil)
         
         teminat_cam = st.checkbox("Sınırsız Orijinal Cam Değişimi", value=True)
         teminat_ikame = st.selectbox("İkame Araç Süresi", ["Yılda 2 Kez, 15 Gün", "Yılda 2 Kez, 7 Gün", "İkame Araç Yok"])
@@ -365,14 +418,12 @@ elif sayfa == "📝 Poliçe Atölyesi":
         kullanilan_ref = st.text_input("Müşteri bir kod getirdi mi?", placeholder="Örn: MEHMET-123 (Opsiyonel)")
         
     with col2:
-        # YENİ: RAYİÇ BEDEL HESAPLAMA MOTORU
         arac_rayic_bedeli = 500000 # Default
         if "Ekonomi" in p_marka: arac_rayic_bedeli = 800000 + ((p_yil - 2005) * 40000)
         elif "Orta Sınıf" in p_marka: arac_rayic_bedeli = 1200000 + ((p_yil - 2005) * 60000)
         elif "Premium" in p_marka: arac_rayic_bedeli = 3000000 + ((p_yil - 2005) * 150000)
         elif "Lüks Spor" in p_marka: arac_rayic_bedeli = 6000000 + ((p_yil - 2005) * 300000)
         
-        # 1. Taban Fiyat Hesaplama (Kasko ise Rayiç bedel üzerinden %1.5 risk payı alırız)
         kasko_primi = int(arac_rayic_bedeli * 0.015) if p_tip == "Kasko" else 0
         trafik_primi = 8500 if p_tip == "Zorunlu Trafik Sigortası" else 0
         dask_primi = 1200 if p_tip == "DASK" else 0
@@ -383,7 +434,6 @@ elif sayfa == "📝 Poliçe Atölyesi":
         tahmini_prim = taban_prim
         dinamik_mesaj = ""
         
-        # Dinamik Fiyatlama ve LTV Algoritması
         if dinamik_fiyat and p_musteri and sh:
             try:
                 policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
@@ -447,11 +497,13 @@ elif sayfa == "📝 Poliçe Atölyesi":
                     try:
                         zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi, net_komisyon_yazisi])
-                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Poliçe Kesildi (Rayiçli)", f"Müşteri: {p_musteri}, Tutar: {prim_yazisi}")
+                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Poliçe Kesildi (Voice-to-CRM Destekli)", f"Müşteri: {p_musteri}, Tutar: {prim_yazisi}")
                         except: pass
-                        try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_plaka, "", "Poliçe Atölyesi"])
+                        try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_plaka, "", "Poliçe Atölyesi (Sesli Müşteri)"])
                         except: pass
                         st.success("Poliçe kesildi!")
+                        # Kayıttan sonra AI hafızasını temizle
+                        st.session_state.update({"ai_isim": "", "ai_plaka": "", "ai_yil": 2020})
                     except Exception as e: st.error(f"Hata: {e}")
         with col_btn2:
             if p_musteri and p_plaka:
