@@ -196,7 +196,7 @@ if st.session_state.rol in ["Admin", "Satis"]:
         "⚖️ Karşılaştırma",
         "🎫 Müşteri Destek Masası",
         "📡 Telematik (Sürüş Analizi)",
-        "⚡ Parametrik Sigorta (Smart Contract)"
+        "⚡ Parametrik Sigorta (Smart Contract)",
         "🛑 Konsorsiyum Kara Liste" # YENİ EKLENDİ
     ]
     if st.session_state.rol == "Admin":
@@ -1777,7 +1777,8 @@ elif sayfa == "🏦 Reasürans (Risk Devri)" and st.session_state.rol == "Admin"
         except Exception as e:
             st.error(f"Veri çekilirken hata oluştu: {e}")
 
-            # YENİ MODÜL: 🛑 KONSORSİYUM KARA LİSTE (FRAUD KALKANI)
+            
+# YENİ MODÜL: 🛑 KONSORSİYUM KARA LİSTE (FRAUD KALKANI)
 elif sayfa == "🛑 Konsorsiyum Kara Liste" and st.session_state.rol in ["Admin", "Satis", "Bayi"]:
     st.title("🛑 Konsorsiyum Kara Liste (Bilgi Asimetrisi Kalkanı)")
     st.markdown("Ağdaki tüm bayilerin ve merkez ekibin ortak kullandığı suistimal (Fraud) veritabanı. Buraya eklenen riskli araçlar, tüm Grimset SaaS ekosisteminde **otomatik olarak engellenir.**")
