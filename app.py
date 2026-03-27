@@ -273,70 +273,137 @@ elif sayfa == "📋 Kayıt & Ayıklama":
         st.markdown(f'<a href="https://wa.me/90{st.session_state.son_tel.replace(" ","")[-10:]}?text=KVKK onayiniz icin ONAYLIYORUM yazin."><div style="background:#25D366;color:white;padding:10px;text-align:center;border-radius:5px;">📲 WhatsApp Onay İste</div></a>', unsafe_allow_html=True)
 
 elif sayfa == "📝 Poliçe Atölyesi":
-    st.title("📝 Poliçe Atölyesi")
-    isim, plaka, tel = st.text_input("Müşteri"), text_input("Plaka"), st.text_input("Tel")
-    tip = st.selectbox("Tip", ["Kasko", "Zorunlu Trafik Sigortası", "DASK"])
-    if st.button("💾 Kaydet") and isim and plaka and sh:
-        prim = 15000 if tip=="Kasko" else 1200
-        sh.worksheet("Üretilen Poliçeler").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), isim, plaka, tip, "Standart", f"{prim} TL", st.session_state.kullanici_adi, f"{komisyon_hesapla(prim, tip)} TL"])
-        st.success("Kesildi.")
-
-elif sayfa == "🔄 AI Çapraz Satış (Cross-Sell)" and st.session_state.rol == "Admin":
-    st.title("🔄 AI Çapraz Satış & Upsell Otopilotu")
-    st.markdown("Mevcut müşterilerin portföyünü tarayarak eksik oldukları poliçeleri özel paketlerle sunun.")
+    st.title("📝 Poliçe Atölyesi (Dinamik Fiyatlama & Global)")
     st.markdown("---")
-    if sh:
-        try:
-            policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
-            if not policeler: st.warning("Veri yok.")
-            else:
-                df_pol = pd.DataFrame(policeler)
-                musteri_urunleri = df_pol.groupby('Müşteri Adı')['Poliçe Tipi'].apply(list).to_dict()
-                firsatlar = []
-                for musteri, urunler in musteri_urunleri.items():
-                    if any("Kasko" in u for u in urunler) and not any("Sağlık" in u for u in urunler): firsatlar.append({"Müşteri": musteri, "Eksik": "Sağlık Sigortası (TSS)", "Neden": "Araç güvencesi var, sağlık yok."})
-                    if any("Sağlık" in u for u in urunler) and not any("DASK" in u for u in urunler): firsatlar.append({"Müşteri": musteri, "Eksik": "DASK", "Neden": "Can güvenliği var, ev yok."})
-                if not firsatlar: st.info("Tüm müşteriler tam koruma altında.")
-                else:
-                    secilen_firsat_idx = st.selectbox("Müşteri Seç:", range(len(firsatlar)), format_func=lambda x: f"{firsatlar[x]['Müşteri']} -> Öneri: {firsatlar[x]['Eksik']}")
-                    firsat = firsatlar[secilen_firsat_idx]
-                    st.write(f"**Neden?** {firsat['Neden']}")
-                    if st.button("🤖 Çapraz Satış Mesajı Üret", type="primary"):
-                        with st.spinner("Gemini senaryo yazıyor..."):
-                            try:
-                                prompt = f"Müşteri: {firsat['Müşteri']}, {firsat['Neden']}. Ona '{firsat['Eksik']}' satmak için %15 VIP sadakat indirimli, 3 cümlelik ikna edici WhatsApp mesajı yaz."
-                                ai_mesaj = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
-                                st.info(ai_mesaj)
-                                wa_link = f"https://wa.me/?text={urllib.parse.quote(ai_mesaj)}"
-                                st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp\'tan Gönder</div></a>', unsafe_allow_html=True)
-                                log_action(st.session_state.kullanici_adi, st.session_state.rol, "Çapraz Satış AI", f"{firsat['Müşteri']} -> {firsat['Eksik']}")
-                            except: st.error("AI Hatası.")
-        except Exception as e: st.error("Hata.")
-
-elif sayfa == "🏢 Kurumsal Filo (B2B)":
-    st.title("🏢 Kurumsal Filo & B2B İK Talepleri")
-    st.markdown("---")
-    if sh:
-        st.subheader("🔔 B2B Şirketlerinden Gelen (İK) Talepler")
-        try:
-            talepler = sh.worksheet("B2B Talepler").get_all_records()
-            bekleyenler = [t for t in talepler if t.get("Durum") == "Bekliyor"]
-            if not bekleyenler: st.success("Şu an İK departmanlarından gelen bekleyen bir talep yok.")
-            else:
-                for idx, t in enumerate(reversed(bekleyenler)):
-                    gercek_idx = len(talepler) - idx
-                    with st.expander(f"🚨 {t.get('Firma')} - {t.get('Personel Adı')} ({t.get('Talep Tipi')})"):
-                        st.write(f"**TC/Plaka:** {t.get('TC/Plaka')} | **Tarih:** {t.get('Tarih')}")
-                        if st.button("✅ Poliçeyi Kestim (Onayla)", key=f"onay_{gercek_idx}"):
-                            sh.worksheet("B2B Talepler").update_cell(gercek_idx + 1, 6, "Onaylandı")
-                            st.success("Talep onaylandı ve İK paneline yansıdı!")
-                            st.rerun()
-        except: st.warning("Talepler yüklenemedi.")
+    secilen_dil = st.radio("🌍 Müşteri İletişim Dili (PDF ve Mesaj Şablonu)", ["Türkçe", "English", "Deutsch", "Français"], horizontal=True)
     
+    # YENİ: DİNAMİK FİYATLAMA MOTORU (AÇ/KAPA)
+    dinamik_fiyat = st.toggle("📊 Mikroekonomik Dinamik Fiyatlama (Görünmez El) Aktif Et", value=True)
     st.markdown("---")
-    st.subheader("🏢 Filo Teklifi Oluştur")
-    firma, arac = st.text_input("Firma"), st.number_input("Adet", 1)
-    if st.button("Kaydet"): sh.worksheet("Filo Teklifleri").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), firma, arac, "Filo", "Kasko", f"{arac*15000} TL", st.session_state.kullanici_adi, "0 TL"]); st.success("Kaydedildi")
+    
+    col1, col2 = st.columns([1, 1], gap="large")
+    with col1:
+        p_musteri = st.text_input("Müşteri Adı Soyadı")
+        p_tel = st.text_input("Telefon (WhatsApp için)")
+        p_mail = st.text_input("Müşteri E-Posta Adresi")
+        p_plaka = st.text_input("Araç Plakası veya Adres Kodu (DASK)")
+        p_tip = st.selectbox("Poliçe Tipi", ["Kasko", "Zorunlu Trafik Sigortası", "DASK"])
+        teminat_cam = st.checkbox("Sınırsız Orijinal Cam Değişimi", value=True)
+        teminat_ikame = st.selectbox("İkame Araç Süresi", ["Yılda 2 Kez, 15 Gün", "Yılda 2 Kez, 7 Gün", "İkame Araç Yok"])
+        teminat_imm = st.select_slider("İMM Limiti", options=["1.000.000 TL", "5.000.000 TL", "Sınırsız"], value="5.000.000 TL")
+        st.markdown("---")
+        st.markdown("### 🎁 Referans İndirimi")
+        kullanilan_ref = st.text_input("Müşteri bir kod getirdi mi?", placeholder="Örn: MEHMET-123 (Opsiyonel)")
+        
+    with col2:
+        # 1. Taban Fiyat Hesaplama
+        taban_prim = 15000 + (5000 if p_tip=="Kasko" else 0) + (1200 if teminat_cam else 0) + (3000 if teminat_imm=="Sınırsız" else 0)
+        if p_tip == "DASK": taban_prim = 1200
+        
+        piyasa_primi = int(taban_prim * 1.18)
+        tahmini_prim = taban_prim
+        dinamik_mesaj = ""
+        
+        # 2. MİKROEKONOMİK DİNAMİK FİYATLAMA ALGORİTMASI
+        if dinamik_fiyat and p_musteri and sh:
+            try:
+                policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
+                df_pol = pd.DataFrame(policeler)
+                islem_sayisi = 0
+                if not df_pol.empty and 'Müşteri Adı' in df_pol.columns:
+                    # Müşterinin eski işlemlerini bul
+                    islem_sayisi = len(df_pol[df_pol['Müşteri Adı'].astype(str).str.upper() == p_musteri.upper()])
+                
+                if islem_sayisi >= 2:
+                    # Fırsat Maliyeti (Opportunity Cost): Müşteriyi kaybetmektense marjdan kısmak daha kârlıdır.
+                    indirim_orani = 0.08
+                    indirim_tutari = int(tahmini_prim * indirim_orani)
+                    tahmini_prim -= indirim_tutari
+                    dinamik_mesaj = f"📉 **Dinamik Fiyatlama (LTV Etkisi):** Müşterinin {islem_sayisi} geçmiş işlemi var. Sadakati korumak için sistem kâr marjını kıstı ve **-{indirim_tutari} TL** anlık VIP indirimi uyguladı."
+                elif islem_sayisi == 0:
+                    # Pazara Giriş / Penetrasyon Stratejisi
+                    indirim_tutari = int(tahmini_prim * 0.03)
+                    tahmini_prim -= indirim_tutari
+                    dinamik_mesaj = f"📈 **Dinamik Fiyatlama (Penetrasyon):** Yeni müşteri! Pazara giriş stratejisi gereği kâr marjından feragat edilip **-{indirim_tutari} TL** rekabetçi indirim yapıldı."
+                else:
+                    dinamik_mesaj = "⚖️ **Dinamik Fiyatlama:** Piyasa koşulları stabil, standart algoritma fiyatı uygulanıyor."
+            except: pass
+
+        # 3. Referans İndirimi
+        if kullanilan_ref:
+            ref_indirim = int(tahmini_prim * 0.05)
+            tahmini_prim -= ref_indirim
+            st.success(f"🎉 Referans İndirimi Uygulandı: -{ref_indirim} TL")
+            
+        avantaj_tutari = piyasa_primi - tahmini_prim
+        net_komisyon_tutari = komisyon_hesapla(tahmini_prim, p_tip)
+        
+        prim_yazisi = f"{tahmini_prim:,} TL"
+        piyasa_yazisi = f"{piyasa_primi:,} TL"
+        avantaj_yazisi = f"{avantaj_tutari:,} TL"
+        net_komisyon_yazisi = f"{net_komisyon_tutari:,} TL"
+        
+        musteri_ozel_ref_kodu = ""
+        if p_musteri and p_plaka:
+            ilk_isim = p_musteri.split()[0].upper().replace(" ", "")
+            plaka_son = p_plaka[-3:].upper() if len(p_plaka) >= 3 else "GRM"
+            musteri_ozel_ref_kodu = f"{ilk_isim}-{plaka_son}"
+        
+        st.info("📊 **Fiyat & Rekabet Analizi**")
+        
+        # Dinamik Mesajı Göster
+        if dinamik_mesaj:
+            st.caption(dinamik_mesaj)
+            
+        c_m1, c_m2 = st.columns(2)
+        c_m1.metric("Grimset Özel Fiyatı", prim_yazisi)
+        c_m2.metric("Müşterinin Kazancı", avantaj_yazisi, delta=f"-{avantaj_tutari:,} TL Fark", delta_color="inverse")
+        
+        cam_text = "Sınırsız" if teminat_cam else "Muafiyetli"
+        if secilen_dil == "English": teminat_ozeti = f"- Glass: {cam_text}\n- Replacement Car: {teminat_ikame}\n- Liability Limit: {teminat_imm}"
+        elif secilen_dil == "Deutsch": teminat_ozeti = f"- Glas: {cam_text}\n- Ersatzwagen: {teminat_ikame}\n- Haftpflichtlimit: {teminat_imm}"
+        elif secilen_dil == "Français": teminat_ozeti = f"- Bris de Glace: {cam_text}\n- Vehicule Remplacement: {teminat_ikame}\n- Limite Responsabilite: {teminat_imm}"
+        else: teminat_ozeti = f"- Cam: {cam_text}\n- İkame: {teminat_ikame}\n- İMM: {teminat_imm}"
+        if kullanilan_ref: teminat_ozeti += f"\n- Ref: {kullanilan_ref}"
+        
+        st.markdown("---")
+        if st.button("💡 Yapay Zeka Satış Tüyosu Üret"):
+            with st.spinner("Gemini satış stratejisi kurguluyor..."):
+                prompt = f"Sen elit satış koçusun. Müşteri '{p_tip}' poliçesi alıyor. Plakası: {p_plaka}. Bu müşteriye gelirini artırmak için hangi ek ürünü satmalıyız? İkna edici 2 cümle öner."
+                try: st.success(client.models.generate_content(model=TEXT_MODEL, contents=prompt).text)
+                except: st.error("Asistan yanıt veremiyor.")
+        st.markdown("---")
+        
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("💾 Google Sheets'e Kaydet", use_container_width=True):
+                if p_musteri and p_plaka and sh:
+                    try:
+                        zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi, net_komisyon_yazisi])
+                        
+                        # Denetim İzi (Audit Log)
+                        try:
+                            log_action(st.session_state.kullanici_adi, st.session_state.rol, "Poliçe Kesildi (Dinamik Fiyat)", f"Müşteri: {p_musteri}, Prim: {prim_yazisi}")
+                        except: pass
+                        
+                        try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_plaka, "", "Poliçe Atölyesi"])
+                        except: pass
+                        st.success("Poliçe kesildi!")
+                    except Exception as e: st.error(f"Hata: {e}")
+        with col_btn2:
+            if p_musteri and p_plaka:
+                st.download_button("📄 PDF İndir (" + secilen_dil + ")", data=pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, piyasa_yazisi, avantaj_yazisi, musteri_ozel_ref_kodu, dil=secilen_dil), file_name=f"Grimset_{secilen_dil}_{p_plaka}.pdf", mime="application/pdf", use_container_width=True)
+        
+        if p_musteri and p_plaka:
+            st.markdown("---")
+            if secilen_dil == "English":
+                wp_mesaj = f"Hello {p_musteri},\nYour {p_tip} quote for {p_plaka} by Grimset Studio is ready.\n\nMarket Average: {piyasa_yazisi}\n*Grimset Discounted Price:* {prim_yazisi}\nYour total savings: {avantaj_yazisi}!\n\n🎁 EXCLUSIVE AFFILIATE CODE: {musteri_ozel_ref_kodu}\nShare this code with friends for a 10% discount on your next renewal!"
+            else:
+                wp_mesaj = f"Merhaba {p_musteri},\nGrimset Studio güvencesiyle {p_plaka} plakalı aracınız için {p_tip} teklifiniz hazırlanmıştır.\n\nPiyasa Ortalaması: {piyasa_yazisi}\n*İndirimli Tutar:* {prim_yazisi}\nKazancınız: {avantaj_yazisi}!\n\n🎁 REFERANS KODUNUZ: {musteri_ozel_ref_kodu}\nBu kodu arkadaşlarınızla paylaşarak %10 İNDİRİM kazanın!"
+                
+            wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={urllib.parse.quote(wp_mesaj)}" if p_tel else f"https://wa.me/?text={urllib.parse.quote(wp_mesaj)}"
+            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp Gönder ({secilen_dil})</div></a>', unsafe_allow_html=True)
 
 # ... (Diğer tüm modüller Sağlık, Vade, Kanban, Hasar, Kasa, LTV, Dashboard kusursuzca çalışmaya devam ediyor) ...
 elif sayfa in ["⏱️ Mikro Sigorta (On-Demand)", "🏥 Sağlık (TSS/ÖSS)", "⏰ Vade & Otonom Yenileme", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı & Süreç", "🗄️ Dijital Evrak Kasası", "⚖️ Karşılaştırma", "🎯 Kampanya Motoru", "📈 LTV & Churn", "💸 Gider Yönetimi", "📊 Finansal & Coğrafi Harita", "🔐 Audit Log"]:
