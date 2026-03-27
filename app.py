@@ -622,19 +622,25 @@ elif sayfa == "📅 Ajanda & Randevu" and st.session_state.rol in ["Admin", "Sat
                                 st.caption(f"🗓️ **{r.get('Tarih')}** | ⏰ **{r.get('Saat')}**")
                                 st.write(f"🎯 **Gündem:** {r.get('Konu')}")
                             with c_r2:
-                                if st.button("🤖 AI Hazırlığı", key=f"ai_prep_{gercek_idx}", use_container_width=True):
-                                    with st.spinner("Gemini strateji üretiyor..."):
-                                        prompt = f"""Sen elit bir sigorta ve satış koçusun. Birazdan '{r.get('Müşteri Adı')}' adlı müşteriyle '{r.get('Konu')}' konusunda bir toplantım var. 
+                                # Butonları değişkene atadık
+                                ai_buton = st.button("🤖 AI Hazırlığı", key=f"ai_prep_{gercek_idx}", use_container_width=True)
+                                tamamla_buton = st.button("✅ Yapıldı İşaretle", key=f"tamamla_{gercek_idx}", use_container_width=True)
+                                
+                            # YENİ EKLENEN YAPI: Butonların basılma olayını dar kolonun DIŞINA, ama kutunun İÇİNE aldık.
+                            if tamamla_buton:
+                                ws_randevu.update_cell(gercek_idx, 5, "Tamamlandı")
+                                try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Toplantı Tamamlandı", f"{r.get('Müşteri Adı')}")
+                                except: pass
+                                st.success("Toplantı tamamlandı olarak işaretlendi!")
+                                st.rerun()
+                                
+                            if ai_buton:
+                                with st.spinner("Gemini strateji üretiyor..."):
+                                    prompt = f"""Sen elit bir sigorta ve satış koçusun. Birazdan '{r.get('Müşteri Adı')}' adlı müşteriyle '{r.get('Konu')}' konusunda bir toplantım var. 
 Lütfen bu satışı kapatmak, müşterinin olası fiyat itirazlarını önceden savuşturmak ve masadan zaferle ayrılmamı sağlamak için bana 3 maddelik çok sert, vurucu ve net bir taktik ver. Satıcı motivasyonuyla konuş."""
-                                        try:
-                                            ai_taktik = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
-                                            st.info(ai_taktik)
-                                        except Exception as e: st.error("AI bağlantı hatası.")
-                                        
-                                if st.button("✅ Yapıldı İşaretle", key=f"tamamla_{gercek_idx}", use_container_width=True):
-                                    ws_randevu.update_cell(gercek_idx, 5, "Tamamlandı")
-                                    try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Toplantı Tamamlandı", f"{r.get('Müşteri Adı')}")
-                                    except: pass
-                                    st.success("Toplantı tamamlandı olarak işaretlendi!")
-                                    st.rerun()
+                                    try:
+                                        ai_taktik = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                                        # Artık bu metin dar kolonda değil, tüm kutu genişliğinde Gündem'in altına dökülecek!
+                                        st.info(ai_taktik)
+                                    except Exception as e: st.error("AI bağlantı hatası.")
             except Exception as e: st.warning(f"Randevular okunamadı: {e}")
