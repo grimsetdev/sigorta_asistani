@@ -279,11 +279,10 @@ elif sayfa == "📋 Kayıt & Ayıklama":
         st.markdown(f'<a href="https://wa.me/90{st.session_state.son_tel.replace(" ","")[-10:]}?text=KVKK onayiniz icin ONAYLIYORUM yazin."><div style="background:#25D366;color:white;padding:10px;text-align:center;border-radius:5px;">📲 WhatsApp Onay İste</div></a>', unsafe_allow_html=True)
 
 elif sayfa == "📝 Poliçe Atölyesi":
-    st.title("📝 Poliçe Atölyesi (Dinamik Fiyatlama & Global)")
+    st.title("📝 Poliçe Atölyesi (Dinamik Rayiç & Global)")
     st.markdown("---")
     secilen_dil = st.radio("🌍 Müşteri İletişim Dili (PDF ve Mesaj Şablonu)", ["Türkçe", "English", "Deutsch", "Français"], horizontal=True)
     
-    # YENİ: DİNAMİK FİYATLAMA MOTORU (AÇ/KAPA)
     dinamik_fiyat = st.toggle("📊 Mikroekonomik Dinamik Fiyatlama (Görünmez El) Aktif Et", value=True)
     st.markdown("---")
     
@@ -291,55 +290,63 @@ elif sayfa == "📝 Poliçe Atölyesi":
     with col1:
         p_musteri = st.text_input("Müşteri Adı Soyadı")
         p_tel = st.text_input("Telefon (WhatsApp için)")
-        p_mail = st.text_input("Müşteri E-Posta Adresi")
         p_plaka = st.text_input("Araç Plakası veya Adres Kodu (DASK)")
         p_tip = st.selectbox("Poliçe Tipi", ["Kasko", "Zorunlu Trafik Sigortası", "DASK"])
+        
+        # YENİ: DİNAMİK KASKO DEĞER MOTORU (ARAÇ BİLGİLERİ)
+        st.markdown("##### 🚙 Araç Değer & Rayiç Bilgileri")
+        c_arac1, c_arac2 = st.columns(2)
+        p_marka = c_arac1.selectbox("Araç Markası Segmenti", ["Ekonomi (Fiat, Renault, Dacia)", "Orta Sınıf (VW, Toyota, Honda)", "Premium (Mercedes, BMW, Audi)", "Lüks Spor (Porsche, Land Rover)"])
+        p_yil = c_arac2.slider("Model Yılı", min_value=2005, max_value=2026, value=2020)
+        
         teminat_cam = st.checkbox("Sınırsız Orijinal Cam Değişimi", value=True)
         teminat_ikame = st.selectbox("İkame Araç Süresi", ["Yılda 2 Kez, 15 Gün", "Yılda 2 Kez, 7 Gün", "İkame Araç Yok"])
         teminat_imm = st.select_slider("İMM Limiti", options=["1.000.000 TL", "5.000.000 TL", "Sınırsız"], value="5.000.000 TL")
         st.markdown("---")
-        st.markdown("### 🎁 Referans İndirimi")
         kullanilan_ref = st.text_input("Müşteri bir kod getirdi mi?", placeholder="Örn: MEHMET-123 (Opsiyonel)")
         
     with col2:
-        # 1. Taban Fiyat Hesaplama
-        taban_prim = 15000 + (5000 if p_tip=="Kasko" else 0) + (1200 if teminat_cam else 0) + (3000 if teminat_imm=="Sınırsız" else 0)
-        if p_tip == "DASK": taban_prim = 1200
+        # YENİ: RAYİÇ BEDEL HESAPLAMA MOTORU
+        arac_rayic_bedeli = 500000 # Default
+        if "Ekonomi" in p_marka: arac_rayic_bedeli = 800000 + ((p_yil - 2005) * 40000)
+        elif "Orta Sınıf" in p_marka: arac_rayic_bedeli = 1200000 + ((p_yil - 2005) * 60000)
+        elif "Premium" in p_marka: arac_rayic_bedeli = 3000000 + ((p_yil - 2005) * 150000)
+        elif "Lüks Spor" in p_marka: arac_rayic_bedeli = 6000000 + ((p_yil - 2005) * 300000)
+        
+        # 1. Taban Fiyat Hesaplama (Kasko ise Rayiç bedel üzerinden %1.5 risk payı alırız)
+        kasko_primi = int(arac_rayic_bedeli * 0.015) if p_tip == "Kasko" else 0
+        trafik_primi = 8500 if p_tip == "Zorunlu Trafik Sigortası" else 0
+        dask_primi = 1200 if p_tip == "DASK" else 0
+        
+        taban_prim = kasko_primi + trafik_primi + dask_primi + (1200 if teminat_cam and p_tip == "Kasko" else 0) + (3000 if teminat_imm=="Sınırsız" and p_tip in ["Kasko", "Zorunlu Trafik Sigortası"] else 0)
         
         piyasa_primi = int(taban_prim * 1.18)
         tahmini_prim = taban_prim
         dinamik_mesaj = ""
         
-        # 2. MİKROEKONOMİK DİNAMİK FİYATLAMA ALGORİTMASI
+        # Dinamik Fiyatlama ve LTV Algoritması
         if dinamik_fiyat and p_musteri and sh:
             try:
                 policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
                 df_pol = pd.DataFrame(policeler)
-                islem_sayisi = 0
-                if not df_pol.empty and 'Müşteri Adı' in df_pol.columns:
-                    # Müşterinin eski işlemlerini bul
-                    islem_sayisi = len(df_pol[df_pol['Müşteri Adı'].astype(str).str.upper() == p_musteri.upper()])
+                islem_sayisi = len(df_pol[df_pol['Müşteri Adı'].astype(str).str.upper() == p_musteri.upper()]) if not df_pol.empty and 'Müşteri Adı' in df_pol.columns else 0
                 
                 if islem_sayisi >= 2:
-                    # Fırsat Maliyeti (Opportunity Cost): Müşteriyi kaybetmektense marjdan kısmak daha kârlıdır.
-                    indirim_orani = 0.08
-                    indirim_tutari = int(tahmini_prim * indirim_orani)
+                    indirim_tutari = int(tahmini_prim * 0.08)
                     tahmini_prim -= indirim_tutari
-                    dinamik_mesaj = f"📉 **Dinamik Fiyatlama (LTV Etkisi):** Müşterinin {islem_sayisi} geçmiş işlemi var. Sadakati korumak için sistem kâr marjını kıstı ve **-{indirim_tutari} TL** anlık VIP indirimi uyguladı."
+                    dinamik_mesaj = f"📉 **Dinamik Fiyatlama (LTV Etkisi):** {islem_sayisi} geçmiş işlem. Sadakati korumak için **-{indirim_tutari:,} TL** VIP indirimi uygulandı."
                 elif islem_sayisi == 0:
-                    # Pazara Giriş / Penetrasyon Stratejisi
                     indirim_tutari = int(tahmini_prim * 0.03)
                     tahmini_prim -= indirim_tutari
-                    dinamik_mesaj = f"📈 **Dinamik Fiyatlama (Penetrasyon):** Yeni müşteri! Pazara giriş stratejisi gereği kâr marjından feragat edilip **-{indirim_tutari} TL** rekabetçi indirim yapıldı."
+                    dinamik_mesaj = f"📈 **Dinamik Fiyatlama (Penetrasyon):** Yeni müşteri. Pazara sızma stratejisiyle **-{indirim_tutari:,} TL** rekabetçi indirim yapıldı."
                 else:
-                    dinamik_mesaj = "⚖️ **Dinamik Fiyatlama:** Piyasa koşulları stabil, standart algoritma fiyatı uygulanıyor."
+                    dinamik_mesaj = "⚖️ **Dinamik Fiyatlama:** Standart risk algoritması devrede."
             except: pass
 
-        # 3. Referans İndirimi
         if kullanilan_ref:
             ref_indirim = int(tahmini_prim * 0.05)
             tahmini_prim -= ref_indirim
-            st.success(f"🎉 Referans İndirimi Uygulandı: -{ref_indirim} TL")
+            st.success(f"🎉 Referans İndirimi Uygulandı: -{ref_indirim:,} TL")
             
         avantaj_tutari = piyasa_primi - tahmini_prim
         net_komisyon_tutari = komisyon_hesapla(tahmini_prim, p_tip)
@@ -349,27 +356,21 @@ elif sayfa == "📝 Poliçe Atölyesi":
         avantaj_yazisi = f"{avantaj_tutari:,} TL"
         net_komisyon_yazisi = f"{net_komisyon_tutari:,} TL"
         
-        musteri_ozel_ref_kodu = ""
-        if p_musteri and p_plaka:
-            ilk_isim = p_musteri.split()[0].upper().replace(" ", "")
-            plaka_son = p_plaka[-3:].upper() if len(p_plaka) >= 3 else "GRM"
-            musteri_ozel_ref_kodu = f"{ilk_isim}-{plaka_son}"
+        musteri_ozel_ref_kodu = f"{p_musteri.split()[0].upper().replace(' ', '')}-{p_plaka[-3:].upper() if len(p_plaka)>=3 else 'GRM'}" if p_musteri and p_plaka else ""
         
+        if p_tip == "Kasko":
+            st.info(f"🚙 **Sistem Tarafından Belirlenen Araç Rayiç Bedeli:** {arac_rayic_bedeli:,} TL")
         st.info("📊 **Fiyat & Rekabet Analizi**")
         
-        # Dinamik Mesajı Göster
-        if dinamik_mesaj:
-            st.caption(dinamik_mesaj)
+        if dinamik_mesaj: st.caption(dinamik_mesaj)
             
         c_m1, c_m2 = st.columns(2)
         c_m1.metric("Grimset Özel Fiyatı", prim_yazisi)
         c_m2.metric("Müşterinin Kazancı", avantaj_yazisi, delta=f"-{avantaj_tutari:,} TL Fark", delta_color="inverse")
         
         cam_text = "Sınırsız" if teminat_cam else "Muafiyetli"
-        if secilen_dil == "English": teminat_ozeti = f"- Glass: {cam_text}\n- Replacement Car: {teminat_ikame}\n- Liability Limit: {teminat_imm}"
-        elif secilen_dil == "Deutsch": teminat_ozeti = f"- Glas: {cam_text}\n- Ersatzwagen: {teminat_ikame}\n- Haftpflichtlimit: {teminat_imm}"
-        elif secilen_dil == "Français": teminat_ozeti = f"- Bris de Glace: {cam_text}\n- Vehicule Remplacement: {teminat_ikame}\n- Limite Responsabilite: {teminat_imm}"
-        else: teminat_ozeti = f"- Cam: {cam_text}\n- İkame: {teminat_ikame}\n- İMM: {teminat_imm}"
+        teminat_ozeti = f"- Cam: {cam_text}\n- İkame: {teminat_ikame}\n- İMM: {teminat_imm}"
+        if p_tip == "Kasko": teminat_ozeti = f"- Araç Grubu: {p_marka.split(' ')[0]} ({p_yil})\n" + teminat_ozeti
         if kullanilan_ref: teminat_ozeti += f"\n- Ref: {kullanilan_ref}"
         
         st.markdown("---")
@@ -387,12 +388,8 @@ elif sayfa == "📝 Poliçe Atölyesi":
                     try:
                         zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi, net_komisyon_yazisi])
-                        
-                        # Denetim İzi (Audit Log)
-                        try:
-                            log_action(st.session_state.kullanici_adi, st.session_state.rol, "Poliçe Kesildi (Dinamik Fiyat)", f"Müşteri: {p_musteri}, Prim: {prim_yazisi}")
+                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Poliçe Kesildi (Rayiçli)", f"Müşteri: {p_musteri}, Tutar: {prim_yazisi}")
                         except: pass
-                        
                         try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_plaka, "", "Poliçe Atölyesi"])
                         except: pass
                         st.success("Poliçe kesildi!")
@@ -409,7 +406,7 @@ elif sayfa == "📝 Poliçe Atölyesi":
                 wp_mesaj = f"Merhaba {p_musteri},\nGrimset Studio güvencesiyle {p_plaka} plakalı aracınız için {p_tip} teklifiniz hazırlanmıştır.\n\nPiyasa Ortalaması: {piyasa_yazisi}\n*İndirimli Tutar:* {prim_yazisi}\nKazancınız: {avantaj_yazisi}!\n\n🎁 REFERANS KODUNUZ: {musteri_ozel_ref_kodu}\nBu kodu arkadaşlarınızla paylaşarak %10 İNDİRİM kazanın!"
                 
             wa_link = f"https://wa.me/90{p_tel.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={urllib.parse.quote(wp_mesaj)}" if p_tel else f"https://wa.me/?text={urllib.parse.quote(wp_mesaj)}"
-            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp Gönder ({secilen_dil})</div></a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 WhatsApp Gönder</div></a>', unsafe_allow_html=True)
 
 # ... (Diğer tüm modüller Sağlık, Vade, Kanban, Hasar, Kasa, LTV, Dashboard kusursuzca çalışmaya devam ediyor) ...
 elif sayfa in ["⏱️ Mikro Sigorta (On-Demand)", "🏥 Sağlık (TSS/ÖSS)", "⏰ Vade & Otonom Yenileme", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı & Süreç", "🗄️ Dijital Evrak Kasası", "⚖️ Karşılaştırma", "🎯 Kampanya Motoru", "📈 LTV & Churn", "💸 Gider Yönetimi", "📊 Finansal & Coğrafi Harita", "🔐 Audit Log"]:
