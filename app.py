@@ -154,7 +154,8 @@ if st.session_state.rol in ["Admin", "Satis"]:
         "🗄️ Dijital Evrak Kasası", 
         "⚖️ Karşılaştırma",
         "🎫 Müşteri Destek Masası",
-        "📡 Telematik (Sürüş Analizi)" # YENİ EKLENDİ
+        "📡 Telematik (Sürüş Analizi)",
+        "⚡ Parametrik Sigorta (Smart Contract)" # YENİ EKLENDİ
     ]
     if st.session_state.rol == "Admin":
         menu_secenekleri.extend([
@@ -1413,3 +1414,91 @@ Lütfen bu verileri yorumlayarak müşteriye doğrudan hitap eden, eğer iyi sü
                                 except Exception as e:
                                     st.error("AI bağlantı hatası.")
         except Exception as e: st.warning(f"Bağlantı hatası: {e}")
+
+        # YENİ MODÜL: ⚡ PARAMETRİK AKILLI SÖZLEŞMELER (SMART CONTRACTS)
+elif sayfa == "⚡ Parametrik Sigorta (Smart Contract)" and st.session_state.rol in ["Admin", "Satis"]:
+    st.title("⚡ Parametrik Akıllı Sözleşmeler (Smart Contracts)")
+    st.markdown("Müşteri beyanı veya eksper beklemeden, dış API'lerden (Örn: Havalimanı Radar, Meteoroloji) alınan verilerle **otomatik tazminat ödeyen** yeni nesil sigortacılık.")
+    st.markdown("---")
+
+    if sh:
+        # Sheet kontrolü/oluşturma
+        try: ws_param = sh.worksheet("Parametrik_Sozlesmeler")
+        except:
+            ws_param = sh.add_worksheet(title="Parametrik_Sozlesmeler", rows="100", cols="10")
+            ws_param.append_row(["Tarih", "Müşteri Adı", "Telefon", "Sözleşme Tipi", "Parametre (Örn: Uçuş No)", "Ödenen Prim", "Otomatik Tazminat", "Durum"])
+
+        c_sc1, c_sc2 = st.columns([1, 1.2], gap="large")
+
+        with c_sc1:
+            st.subheader("📝 Yeni Akıllı Sözleşme Üret")
+            with st.form("smart_contract_form"):
+                sc_musteri = st.text_input("Müşteri Adı Soyadı")
+                sc_tel = st.text_input("Telefon (WhatsApp Bildirimi İçin)")
+                sc_tip = st.selectbox("Sözleşme Tipi (Tetikleyici)", ["✈️ Uçuş Rötar Sigortası (>2 Saat)", "🌾 Tarım Sigortası (Dolu/Aşırı Yağış)", "🌍 Deprem Anında Acil Nakit (AFAD API)"])
+                
+                if "Uçuş" in sc_tip:
+                    sc_parametre = st.text_input("Takip Edilecek Uçuş Kodu (Örn: TK2026)")
+                    sc_tazminat = "5.000 TL"
+                    sc_prim = "150 TL"
+                elif "Tarım" in sc_tip:
+                    sc_parametre = st.text_input("Takip Edilecek İl/İlçe Meteoroloji Kodu (Örn: BURSA-GEMLİK)")
+                    sc_tazminat = "50.000 TL"
+                    sc_prim = "2.500 TL"
+                else:
+                    sc_parametre = st.text_input("Takip Edilecek AFAD Bölge Kodu")
+                    sc_tazminat = "20.000 TL"
+                    sc_prim = "500 TL"
+                
+                st.info(f"**Alınacak Prim:** {sc_prim} | **Şart Gerçekleşirse Otomatik Ödenecek Tazminat:** {sc_tazminat}")
+
+                if st.form_submit_button("Akıllı Sözleşmeyi Blokzincire (Sisteme) İşle", type="primary"):
+                    if sc_musteri and sc_parametre:
+                        ws_param.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), sc_musteri, sc_tel, sc_tip, sc_parametre.upper(), sc_prim, sc_tazminat, "Aktif (Dinleniyor)"])
+                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Akıllı Sözleşme Üretildi", f"Müşteri: {sc_musteri}, Parametre: {sc_parametre}")
+                        except: pass
+                        st.success("Akıllı sözleşme başarıyla ağa dahil edildi ve dış API'leri dinlemeye başladı!")
+                        st.rerun()
+                    else: st.warning("Lütfen müşteri adı ve takip parametresini (Örn: Uçuş No) girin.")
+
+        with c_sc2:
+            st.subheader("📡 Dış Veri (API) Simülatörü & Otonom Ödeme")
+            st.markdown("*(Gerçek hayatta bu sistem dış sunuculardan gelen Webhook'larla otomatik tetiklenir. Burada manuel olarak bir olayın gerçekleştiğini simüle edeceğiz.)*")
+            
+            try:
+                sozlesmeler = ws_param.get_all_records()
+                aktif_sozlesmeler = [s for s in sozlesmeler if str(s.get("Durum", "")) == "Aktif (Dinleniyor)"]
+                
+                if not aktif_sozlesmeler:
+                    st.info("Şu an dış veri bekleyen aktif bir sözleşme yok.")
+                else:
+                    for idx, s in enumerate(aktif_sozlesmeler):
+                        gercek_idx = sozlesmeler.index(s) + 2
+                        with st.container(border=True):
+                            st.markdown(f"**👤 Müşteri:** {s.get('Müşteri Adı')} | **Sözleşme:** {s.get('Sözleşme Tipi')}")
+                            st.caption(f"🛡️ Dinlenen Parametre: **{s.get('Parametre (Örn: Uçuş No)')}** | Potansiyel Tazminat: **{s.get('Otomatik Tazminat')}**")
+                            
+                            # Simülasyon Butonu
+                            if st.button(f"🚨 DIŞ VERİ TETİKLENDİ ({s.get('Parametre (Örn: Uçuş No)')} Şartı Sağlandı!)", key=f"tetik_{gercek_idx}", type="primary", use_container_width=True):
+                                with st.spinner("Bürokrasi atlanıyor, para transferi otonom olarak gerçekleştiriliyor..."):
+                                    # Durumu Güncelle
+                                    ws_param.update_cell(gercek_idx, 8, "Tazminat Ödendi (Otonom)")
+                                    try: log_action("SİSTEM OTONOMU", "AI", "Parametrik Ödeme Gerçekleşti", f"Sözleşme: {s.get('Parametre (Örn: Uçuş No)')}, Tutar: {s.get('Otomatik Tazminat')}")
+                                    except: pass
+                                    
+                                    st.success(f"BİNGO! Hasar dosyası açılmadan {s.get('Otomatik Tazminat')} tutarındaki tazminat müşterinin hesabına saniyeler içinde aktarıldı.")
+                                    
+                                    # WhatsApp Mesajı Oluşturma
+                                    prompt = f"""Sen Grimset Studio'nun yeni nesil akıllı sigorta yapay zekasısın. 
+Müşterimiz {s.get('Müşteri Adı')} için hazırladığımız '{s.get('Sözleşme Tipi')}' sözleşmesindeki şartlar (Parametre: {s.get('Parametre (Örn: Uçuş No)')}) dış sistemlerden doğrulandı. 
+Müşteri bize hiçbir başvuru yapmadı. Biz olayı ondan önce tespit ettik.
+Ona, "{s.get('Otomatik Tazminat')} tutarındaki tazminatınızın hiçbir belge istenmeden anında hesabınıza yatırıldığını" söyleyen, Grimset'in ne kadar teknolojik ve güvenilir olduğunu hissettiren şok edici ve sevindirici 3 cümlelik bir WhatsApp mesajı yaz."""
+                                    try:
+                                        ai_msg = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                                        st.info(f"**🤖 AI Otonom Müşteri Bilgilendirmesi:**\n{ai_msg}")
+                                        
+                                        tel_no = str(s.get('Telefon', ''))
+                                        wa_link = f"https://wa.me/90{tel_no.replace(' ', '').replace('+90', '').replace('0', '', 1)}?text={urllib.parse.quote(ai_msg)}"
+                                        st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 Otonom Mesajı WhatsApp\'tan Fırlat</div></a>', unsafe_allow_html=True)
+                                    except: st.error("AI mesajı oluşturulamadı.")
+            except Exception as e: st.warning(f"Sözleşme tablosu okunurken hata: {e}")
