@@ -149,11 +149,12 @@ if st.session_state.rol in ["Admin", "Satis"]:
         "🏢 Kurumsal Filo (B2B)", 
         "⏰ Vade & Otonom Yenileme", 
         "📌 Satış Hunisi (Kanban)", 
-        "📅 Ajanda & Randevu", # YENİ EKLENDİ
+        "📅 Ajanda & Randevu", 
         "🚗 Hasar Asistanı & Süreç Yönetimi", 
         "🗄️ Dijital Evrak Kasası", 
         "⚖️ Karşılaştırma",
-        "🎫 Müşteri Destek Masası"
+        "🎫 Müşteri Destek Masası",
+        "📡 Telematik (Sürüş Analizi)" # YENİ EKLENDİ
     ]
     if st.session_state.rol == "Admin":
         menu_secenekleri.extend([
@@ -644,3 +645,94 @@ Lütfen bu satışı kapatmak, müşterinin olası fiyat itirazlarını önceden
                                         st.info(ai_taktik)
                                     except Exception as e: st.error("AI bağlantı hatası.")
             except Exception as e: st.warning(f"Randevular okunamadı: {e}")
+
+            # YENİ MODÜL: 📡 TELEMATİK VE IOT (SÜRÜŞ ANALİZİ)
+elif sayfa == "📡 Telematik (Sürüş Analizi)" and st.session_state.rol in ["Admin", "Satis"]:
+    st.title("📡 IoT Telematik & Sürüş Skoru (Pay-How-You-Drive)")
+    st.markdown("Müşterilerin araçlarındaki telemetri cihazlarından anlık sürüş verilerini çekin ve Kasko fiyatlarını risk analiziyle kişiselleştirin.")
+    st.markdown("---")
+
+    if sh:
+        try:
+            musteriler = sh.worksheet("Müşteri Portföyü").get_all_records()
+            if not musteriler:
+                st.warning("Sistemde müşteri bulunmuyor.")
+            else:
+                df_musteri = pd.DataFrame(musteriler)
+                # Sadece plakası olanları (araç sahiplerini) listele
+                df_musteri = df_musteri[df_musteri['Plaka'].astype(str).str.strip() != ""]
+                musteri_listesi = df_musteri.apply(lambda x: f"{x['Plaka']} - {x['Müşteri Adı']}", axis=1).unique()
+
+                if len(musteri_listesi) == 0:
+                    st.info("Kayıtlı plakaya sahip müşteri bulunamadı.")
+                else:
+                    c_tel1, c_tel2 = st.columns([1, 1.5], gap="large")
+
+                    with c_tel1:
+                        st.subheader("🚙 Araç Veri Simülasyonu")
+                        secilen_arac = st.selectbox("Sürüş Verisi Çekilecek Araç:", musteri_listesi)
+
+                        st.markdown("*(Aşağıdaki veriler normalde araçtaki çipten veya mobil uygulamadan otomatik çekilir. Test için manuel simüle ediniz)*")
+                        hiz_ihlali = st.slider("Aylık Aşırı Hız İhlali (Adet)", 0, 50, 5)
+                        ani_fren = st.slider("Ani Fren / Sert İvmelenme (Adet)", 0, 100, 15)
+                        gece_surus = st.slider("Gece Sürüş Oranı (00:00 - 06:00) %", 0, 100, 10)
+                        aylik_km = st.slider("Aylık Ortalama Mesafe (KM)", 100, 10000, 1200)
+
+                    with c_tel2:
+                        st.subheader("📊 Telematik Risk Skoru & Fiyatlama")
+
+                        # Basit Aktüeryal Sürüş Skoru Algoritması (100 üzerinden başlar, hatalarla düşer)
+                        base_score = 100
+                        ceza_hiz = hiz_ihlali * 1.5
+                        ceza_fren = ani_fren * 0.5
+                        ceza_gece = (gece_surus - 20) * 0.5 if gece_surus > 20 else 0
+                        ceza_km = (aylik_km - 2000) * 0.002 if aylik_km > 2000 else 0
+
+                        toplam_ceza = ceza_hiz + ceza_fren + ceza_gece + ceza_km
+                        surus_skoru = max(0, min(100, int(base_score - toplam_ceza)))
+
+                        # Renk ve Finansal Etki Belirleme
+                        if surus_skoru >= 80:
+                            renk = "#2ecc71" # Yeşil
+                            durum = "🌟 Mükemmel Sürücü"
+                            fiyat_etkisi = "-%15 İndirim (Ödül)"
+                        elif surus_skoru >= 60:
+                            renk = "#f1c40f" # Sarı
+                            durum = "⚠️ Standart Sürücü"
+                            fiyat_etkisi = "Standart Tarife (Etki Yok)"
+                        else:
+                            renk = "#e74c3c" # Kırmızı
+                            durum = "🚨 Yüksek Riskli Sürücü"
+                            fiyat_etkisi = "+%25 Sürprim (Ceza)"
+
+                        st.markdown(f"""
+                        <div style="background-color: #1e1e1e; padding: 20px; border-radius: 10px; border-left: 5px solid {renk}; box-shadow: 0px 4px 10px rgba(0,0,0,0.3);">
+                            <h2 style="margin:0; color: white;">Skor: <span style="color:{renk};">{surus_skoru} / 100</span></h2>
+                            <p style="margin-top:5px; font-size: 1.1rem; color: #ccc;">Sürücü Profili: <b>{durum}</b></p>
+                            <h4 style="margin-top:10px; color: {renk};">Sonraki Kasko Fiyat Etkisi: {fiyat_etkisi}</h4>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        st.markdown("---")
+                        if st.button("🤖 AI Sürücü Geri Bildirim Raporu Oluştur", type="primary", use_container_width=True):
+                            with st.spinner("Gemini telemetri verilerini analiz ediyor..."):
+                                prompt = f"""Sen Grimset Studio'nun telematik risk aktüerisin. Birazdan '{secilen_arac}' plakalı müşterimize Whatsapp'tan bir aylık sürüş karnesi göndereceksin.
+Müşterinin 1 aylık sürüş verisi şu şekilde:
+- Aşırı Hız İhlali: {hiz_ihlali} kez
+- Ani Fren: {ani_fren} kez
+- Gece Sürüş Oranı: %{gece_surus}
+Hesaplanan Sürüş Skoru: {surus_skoru}/100 ({durum}). Kaskosuna yansıyacak potansiyel etki: {fiyat_etkisi}.
+
+Lütfen bu verileri yorumlayarak müşteriye doğrudan hitap eden, eğer iyi sürüyorsa tebrik eden ve indirim müjdesi veren; eğer kötü sürüyorsa kibarca uyaran ve poliçe fiyatının artacağını belirten 3-4 cümlelik kısa bir WhatsApp mesajı hazırla."""
+                                try:
+                                    ai_rapor = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                                    st.info(ai_rapor)
+
+                                    wa_link = f"https://wa.me/?text={urllib.parse.quote(ai_rapor)}"
+                                    st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 Sürücüye WhatsApp\'tan Karnesini Gönder</div></a>', unsafe_allow_html=True)
+
+                                    try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Telematik Raporu Üretildi", f"Araç: {secilen_arac}, Skor: {surus_skoru}")
+                                    except: pass
+                                except Exception as e:
+                                    st.error("AI bağlantı hatası.")
+        except Exception as e: st.warning(f"Bağlantı hatası: {e}")
