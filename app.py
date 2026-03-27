@@ -1962,7 +1962,7 @@ elif sayfa == "⚙️ Operasyonel Komuta Merkezi" and st.session_state.rol in ["
                         st.warning("Lütfen görev detayını boş bırakmayın.")
 
         with c_komuta2:
-            st.subheader("📋 AdanaMu | Görev Panosu")
+            st.subheader("📋 Grimset Studio | Görev Panosu")
             try:
                 gorevler = ws_gorev.get_all_records()
                 if not gorevler: 
