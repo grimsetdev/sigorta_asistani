@@ -152,7 +152,7 @@ if st.session_state.rol in ["Admin", "Satis"]:
         "🚗 Hasar Asistanı & Süreç Yönetimi", 
         "🗄️ Dijital Evrak Kasası", 
         "⚖️ Karşılaştırma",
-        "🎫 Müşteri Destek Masası" # YENİ EKLENDİ
+        "🎫 Müşteri Destek Masası"
     ]
     if st.session_state.rol == "Admin":
         menu_secenekleri.extend([
@@ -160,7 +160,8 @@ if st.session_state.rol in ["Admin", "Satis"]:
             "📈 LTV & Churn Analizi", 
             "💸 Gider Yönetimi", 
             "📊 Finansal & Coğrafi Dashboard",
-            "🔐 Denetim İzi (Audit Log)"
+            "🔐 Denetim İzi (Audit Log)",
+            "🌐 Developer API & Entegrasyon" # YENİ EKLENDİ
         ])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 elif st.session_state.rol == "B2B_IK":
@@ -496,3 +497,73 @@ elif sayfa == "🎫 Müşteri Destek Masası" and st.session_state.rol in ["Admi
                                 st.rerun()
                             else: st.warning("Lütfen bir yanıt yazın.")
         except Exception as e: st.warning("Destek tablosu henüz oluşturulmamış veya okunurken hata oluştu.")
+
+        # YENİ MODÜL: 🌐 GRIMSET DEVELOPER API
+elif sayfa == "🌐 Developer API & Entegrasyon" and st.session_state.rol == "Admin":
+    st.title("🌐 Grimset Developer API & Entegrasyon Portalı")
+    st.markdown("Dış platformlardan (Web siteniz, mobil uygulamanız veya bayi sistemleriniz) Grimset CRM'e otomatik veri akışı sağlamak için gizli API anahtarları oluşturun ve yönetin.")
+    st.markdown("---")
+    
+    import uuid
+    
+    if sh:
+        # Sheet kontrolü/oluşturma
+        try: ws_api = sh.worksheet("API_Keys")
+        except:
+            ws_api = sh.add_worksheet(title="API_Keys", rows="100", cols="10")
+            ws_api.append_row(["Tarih", "Uygulama Adı", "API Anahtarı", "Durum", "Oluşturan"])
+        
+        c_api1, c_api2 = st.columns([1, 1.5], gap="large")
+        with c_api1:
+            st.subheader("🔑 Yeni API Anahtarı Üret")
+            with st.form("api_form"):
+                app_name = st.text_input("Bağlanacak Uygulama / Platform Adı", placeholder="Örn: Grimset Web Sitesi İletişim Formu")
+                if st.form_submit_button("API Anahtarı Oluştur", type="primary"):
+                    if app_name:
+                        # Gerçekçi ve güvenli bir anahtar formatı
+                        yeni_key = f"gr_live_{uuid.uuid4().hex}"
+                        ws_api.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), app_name, yeni_key, "Aktif", st.session_state.kullanici_adi])
+                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "API Anahtarı Üretildi", f"Uygulama: {app_name}")
+                        except: pass
+                        st.success(f"Anahtar Başarıyla Üretildi!")
+                        st.code(yeni_key, language="text")
+                        st.rerun()
+                    else: st.warning("Lütfen uygulama adını girin.")
+        
+        with c_api2:
+            st.subheader("🔌 Aktif Entegrasyonlar")
+            try:
+                api_kayitlari = ws_api.get_all_records()
+                if not api_kayitlari: st.info("Sistemde henüz aktif bir API entegrasyonu bulunmuyor.")
+                else: 
+                    # Anahtarın bir kısmını gizleyerek gösterelim (Güvenlik)
+                    df_api = pd.DataFrame(api_kayitlari)
+                    df_api['API Anahtarı'] = df_api['API Anahtarı'].apply(lambda x: f"{str(x)[:12]}...{str(x)[-4:]}")
+                    st.dataframe(df_api.iloc[::-1], use_container_width=True)
+            except Exception as e: st.warning(f"Tablo okunamadı: {e}")
+        
+        st.markdown("---")
+        st.subheader("📖 API Dokümantasyonu (Örnek Kullanım)")
+        st.markdown("Aşağıdaki Python örneğini kullanarak dış sistemlerinizden **Satış Hunisine (Kanban)** otomatik Aday (Lead) gönderebilirsiniz:")
+        
+        st.code("""
+# Python (Requests) ile Grimset CRM'e Dışarıdan Müşteri Gönderme Örneği
+import requests
+
+url = "https://api.grimset.studio/v1/leads" # Temsili Uç Nokta
+headers = {
+    "Authorization": "Bearer gr_live_senin_gizli_anahtarin_buraya_gelecek",
+    "Content-Type": "application/json"
+}
+payload = {
+    "isim": "Dışarıdan Gelen Yeni Aday",
+    "telefon": "0555 123 45 67",
+    "ilgili_urun": "Filo Kasko",
+    "kaynak": "Grimset Web Sitesi"
+}
+
+response = requests.post(url, json=payload, headers=headers)
+
+if response.status_code == 201:
+    print("Müşteri başarıyla Grimset Satış Hunisine (Kanban) eklendi!")
+        """, language="python")
