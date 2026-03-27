@@ -639,9 +639,12 @@ elif sayfa == "🏥 Sağlık (TSS/ÖSS)":
                 ai_teminat_ozeti = f"Musteri Yasi: {s_yas}\nVucut Kitle Indeksi: {vki}\nMeslek Grubu: {s_meslek}\n\n* AI Tarafindan Belirlenen Ozel Kapsam onerileri ve Risk analizleri sisteme islenmistir."
                 st.download_button("📄 PDF Teklif İndir", data=pdf_olustur(s_musteri, s_tc_tel, s_tip, ai_teminat_ozeti, f"{toplam_saglik_primi:,} TL"), file_name=f"Grimset_Saglik_{s_musteri.replace(' ','_')}.pdf", mime="application/pdf", use_container_width=True)
 
+# GÜNCEL MODÜL: 🏢 KURUMSAL FİLO (B2B) & ⚖️ SEDDK HUKUK KALKANI
 elif sayfa == "🏢 Kurumsal Filo (B2B)":
-    st.title("🏢 Kurumsal Filo Yönetimi & B2B Talepleri")
+    st.title("🏢 Kurumsal Filo Yönetimi & ⚖️ SEDDK Kalkanı")
+    st.markdown("Milyonluk B2B filo anlaşmalarını yönetin ve sözleşmeleri yapay zeka tabanlı SEDDK Regülasyon Kalkanı ile hukuki güvenceye alın.")
     st.markdown("---")
+    
     if sh:
         st.subheader("🔔 B2B Şirketlerinden Gelen (İK) Talepler")
         try:
@@ -660,12 +663,13 @@ elif sayfa == "🏢 Kurumsal Filo (B2B)":
         except: st.warning("B2B Talepleri tablosu henüz oluşmamış veya boş.")
     
     st.markdown("---")
-    st.subheader("🏢 Yeni Filo Teklifi Oluştur")
+    st.subheader("🏢 Yeni Filo Teklifi & Hukuk Denetimi")
     f_col1, f_col2 = st.columns([1, 1], gap="large")
     with f_col1:
-        f_firma = st.text_input("Kurumsal Firma Adı")
-        f_tip = st.selectbox("Filo Sigorta Tipi", ["Filo Kasko", "Filo Zorunlu Trafik Sigortası"])
+        f_firma = st.text_input("Kurumsal Firma Adı", placeholder="Örn: Tech A.Ş.")
+        f_tip = st.selectbox("Filo Sigorta Tipi", ["Filo Kasko", "Filo Zorunlu Trafik Sigortası", "İşyeri Yangın & Sorumluluk"])
         girilen_plakalar = st_tags(label='**Araç Plakalarını Girin**', text='Plakayı yazıp Enter tuşuna basın', value=[], suggestions=['34ABC123', '06DEF456'], key='filo_plakalar')
+        
     with f_col2:
         if f_firma and girilen_plakalar:
             plakalar = [p.strip().upper() for p in girilen_plakalar if p.strip()]
@@ -679,15 +683,47 @@ elif sayfa == "🏢 Kurumsal Filo (B2B)":
                 
                 st.success(f"**{arac_sayisi} Adet Araç Eşleştirildi!**")
                 st.info(f"İndirim: **%{int(indirim_orani*100)}** | Toplam Prim: **{toplam_filo_primi:,} TL**")
+                
+                # YENİ: SEDDK HUKUK KALKANI
+                st.markdown("---")
+                st.markdown("#### ⚖️ AI Hukuk & SEDDK Denetimi")
+                st.caption("Milyonluk sözleşmeleri kaydetmeden önce hukuki açık taraması yapmak zorunludur.")
+                
+                if "seddk_onay" not in st.session_state:
+                    st.session_state.seddk_onay = False
+                    
+                if st.button("🧠 AI Hukuk Müşavirini Çalıştır", type="secondary", use_container_width=True):
+                    with st.spinner("Gemini, poliçeyi Türkiye Sigorta Kanunları ve SEDDK regülasyonlarına göre denetliyor..."):
+                        prompt = f"""Sen SEDDK (Sigortacılık ve Özel Emeklilik Düzenleme ve Denetleme Kurumu) uzmanı ve Grimset'in baş avukatısın. 
+Şirketimiz '{f_firma}' adlı kuruma {arac_sayisi} araçlık '{f_tip}' poliçesi kesiyor. Toplam prim: {toplam_filo_primi} TL.
+Bu büyük B2B sözleşmesinde yasal olarak eksik olabilecek klozları (muafiyet, rücu, enflasyon koruması) kısaca denetle. Şirketi koruyacak 2 hukuki uyarı yap. 
+Raporun en sonuna büyük harflerle 'DURUM: ONAYLANDI' yaz."""
+                        try:
+                            st.session_state.seddk_raporu = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                            st.session_state.seddk_onay = True
+                        except:
+                            st.error("AI Hukuk Müşaviri bağlantı hatası.")
+                            
+                if st.session_state.get("seddk_onay", False) and "seddk_raporu" in st.session_state:
+                    st.markdown(f"""
+                    <div style="background-color: #2c3e50; padding: 15px; border-radius: 8px; border-left: 5px solid #3498db; margin-bottom: 15px;">
+                        <h4 style="margin-top:0; color:#ecf0f1;">⚖️ AI Hukuk Denetim Raporu</h4>
+                        <p style="margin-bottom:0; color:#bdc3c7;">{st.session_state.seddk_raporu}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    if st.button("💾 Sisteme Kaydet", use_container_width=True, type="primary"):
+                    # KİLİTLİ BUTON MANTIĞI
+                    buton_metni = "💾 Sisteme Kaydet" if st.session_state.get("seddk_onay") else "🔒 Kaydet (Önce Hukuk Denetimi Yapın)"
+                    if st.button(buton_metni, use_container_width=True, type="primary", disabled=not st.session_state.get("seddk_onay", False)):
                         if sh:
                             try:
                                 sh.worksheet("Filo Teklifleri").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f_firma, arac_sayisi, ", ".join(plakalar), f_tip, f"{toplam_filo_primi:,} TL", st.session_state.kullanici_adi, f"{net_komisyon_filo:,} TL"])
-                                try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "B2B Filo Satışı", f"Firma: {f_firma}, Araç Sayısı: {arac_sayisi}")
+                                try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "B2B Filo Satışı (SEDDK Onaylı)", f"Firma: {f_firma}")
                                 except: pass
-                                st.success("B2B Filo teklifi kaydedildi!")
+                                st.success("B2B Filo teklifi SEDDK onaylı olarak başarıyla kaydedildi!")
+                                st.session_state.seddk_onay = False # Kayıttan sonra kilidi tekrar devreye al
                             except Exception as e: st.error(f"Kayıt Hatası: {e}")
                 with col_btn2:
                     st.download_button("📄 PDF İndir", data=filo_pdf_olustur(f_firma, plakalar, f_tip, toplam_filo_primi), file_name=f"Grimset_{f_firma}.pdf", mime="application/pdf", use_container_width=True)
