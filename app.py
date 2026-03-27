@@ -48,8 +48,9 @@ def log_action(kullanici, rol, islem_turu, islem_detayi):
         try: sh.worksheet("Audit Log").append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), kullanici, rol, islem_turu, islem_detayi])
         except: pass
 
+# --- OTURUM YÖNETİMİ ---
 if "giris_yapildi" not in st.session_state:
-    st.session_state.update({"giris_yapildi": False, "rol": None, "kullanici_adi": None, "musteri_plaka": None, "musteri_tel": None, "firma_adi": None})
+    st.session_state.update({"giris_yapildi": False, "rol": None, "kullanici_adi": None, "musteri_plaka": None, "musteri_tel": None, "firma_adi": None, "bayi_kodu": None})
 
 if not st.session_state.giris_yapildi:
     st.markdown("<br><br><br>", unsafe_allow_html=True)
@@ -58,20 +59,25 @@ if not st.session_state.giris_yapildi:
         st.markdown('<div class="login-box">', unsafe_allow_html=True)
         st.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=200)
         st.markdown("<h3 style='text-align: center;'>Grimset Studio Sistem Girişi</h3>", unsafe_allow_html=True)
-        # YENİ: B2B Giriş Sekmesi eklendi
-        tab_personel, tab_musteri, tab_b2b = st.tabs(["🧑‍💼 Personel", "👤 Müşteri", "🏢 Kurumsal B2B"])
+        
+        # YENİ: Bayi (SaaS) sekmesi 4. sekme olarak eklendi!
+        tab_personel, tab_musteri, tab_b2b, tab_bayi = st.tabs(["🧑‍💼 Personel", "👤 Müşteri", "🏢 B2B", "🌍 Bayi (SaaS)"])
+        
         with tab_personel:
             k_adi, sifre = st.text_input("Kullanıcı Adı", key="k_adi"), st.text_input("Şifre", type="password", key="sifre")
             if st.button("Giriş Yap", use_container_width=True, type="primary"):
                 if k_adi == "admin" and sifre == "Grimset2026":
                     st.session_state.update({"giris_yapildi": True, "rol": "Admin", "kullanici_adi": "Yönetici"})
-                    log_action("Yönetici", "Admin", "Sisteme Giriş", "Başarılı")
+                    try: log_action("Yönetici", "Admin", "Sisteme Giriş", "Başarılı")
+                    except: pass
                     st.rerun()
                 elif k_adi == "ali" and sifre == "satis123":
                     st.session_state.update({"giris_yapildi": True, "rol": "Satis", "kullanici_adi": "Ali"})
-                    log_action("Ali", "Satis", "Sisteme Giriş", "Başarılı")
+                    try: log_action("Ali", "Satis", "Sisteme Giriş", "Başarılı")
+                    except: pass
                     st.rerun()
                 else: st.error("Hatalı giriş!")
+                
         with tab_musteri:
             m_plaka_giris, m_tel_giris = st.text_input("Plaka veya T.C. No", placeholder="Örn: 34ABC123"), st.text_input("Sisteme Kayıtlı Telefon", type="password")
             if st.button("Müşteri Paneline Gir", use_container_width=True, type="primary"):
@@ -83,22 +89,47 @@ if not st.session_state.giris_yapildi:
                             if str(m.get("Plaka", "")).replace(" ", "").upper() == p_in and str(m.get("Telefon", "")).replace(" ", "") == t_in:
                                 st.session_state.update({"giris_yapildi": True, "rol": "Musteri", "kullanici_adi": str(m.get("Müşteri Adı", "Müşteri")), "musteri_plaka": p_in, "musteri_tel": t_in})
                                 giris_basarili = True
-                                log_action(st.session_state.kullanici_adi, "Musteri", "Müşteri Girişi", f"Plaka/TC: {p_in}")
+                                try: log_action(st.session_state.kullanici_adi, "Musteri", "Müşteri Girişi", f"Plaka/TC: {p_in}")
+                                except: pass
                                 st.rerun(); break
                         if not giris_basarili: st.error("Kayıt bulunamadı.")
                     except Exception as e: st.error("Hata.")
                 else: st.warning("Bilgileri girin.")
+                
         with tab_b2b:
             st.info("Kurumsal İK veya Filo yöneticisi girişi.")
             b2b_kod = st.text_input("Firma Kodu", placeholder="Örn: TECH100")
             b2b_sifre = st.text_input("Firma Şifresi", type="password")
             if st.button("Kurumsal Giriş", use_container_width=True, type="primary"):
-                # Demo B2B Firması: Tech A.Ş.
                 if b2b_kod == "TECH100" and b2b_sifre == "b2b123":
-                    st.session_state.update({"giris_yapildi": True, "rol": "B2B_IK", "kullanici_adi": "Tech A.Ş. İK Müdürü", "firma_adi": "Tech A.Ş."})
-                    log_action("Tech A.Ş.", "B2B", "Kurumsal Giriş", "Başarılı")
+                    st.session_state.update({"giris_yapildi": True, "rol": "B2B_IK", "kullanici_adi": "Tech A.Ş. İK", "firma_adi": "Tech A.Ş."})
+                    try: log_action("Tech A.Ş.", "B2B", "Kurumsal Giriş", "Başarılı")
+                    except: pass
                     st.rerun()
                 else: st.error("Geçersiz firma kodu veya şifre.")
+                
+        # YENİ MODÜL: BAYİ (SaaS TENANT) GİRİŞ KAPISI
+        with tab_bayi:
+            st.info("Grimset SaaS altyapısını kullanan yetkili acente girişi.")
+            giris_kodu = st.text_input("Sisteme Giriş Kodu (Acente ID)", placeholder="Örn: GRM-A1B2C3")
+            if st.button("Acente Sistemine Gir", use_container_width=True, type="primary"):
+                if sh and giris_kodu:
+                    try:
+                        bayiler = sh.worksheet("Bayiler").get_all_records()
+                        giris_basarili = False
+                        for b in bayiler:
+                            if str(b.get("Sistem Giriş Kodu", "")) == giris_kodu and str(b.get("Durum", "")) == "Aktif":
+                                # Bayi rolüyle içeri alıyoruz
+                                st.session_state.update({"giris_yapildi": True, "rol": "Bayi", "kullanici_adi": str(b.get("Yetkili Kişi", "Bayi Temsilcisi")), "firma_adi": str(b.get("Acente (Bayi) Adı", "Bayi")), "bayi_kodu": giris_kodu})
+                                giris_basarili = True
+                                try: log_action(st.session_state.kullanici_adi, "Bayi", "SaaS Bayi Girişi", f"Acente: {st.session_state.firma_adi}")
+                                except: pass
+                                st.rerun()
+                                break
+                        if not giris_basarili: st.error("Geçersiz veya pasif Acente Kodu! (Büyük/küçük harfe dikkat ediniz)")
+                    except Exception as e: st.error("Bağlantı hatası, lütfen tabloyu kontrol edin.")
+                else: st.warning("Lütfen giriş kodunuzu yazın.")
+                
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
@@ -137,9 +168,19 @@ db = veritabani_yukle()
 # --- YAN MENÜ ---
 st.sidebar.image("https://images.squarespace-cdn.com/content/v1/6055d01a61b2383be553b1b6/bd6d8e20-94d0-4e36-b552-6d2c4b574229/grimset+copy+copy+logo.png?format=1500w", width=150)
 st.sidebar.markdown(f"**👤 Kullanıcı:** {st.session_state.kullanici_adi}")
-if st.sidebar.button("🚪 Çıkış", use_container_width=True): log_action(st.session_state.kullanici_adi, st.session_state.rol, "Çıkış", ""); st.session_state.giris_yapildi=False; st.rerun()
+if st.session_state.rol == "Bayi":
+    st.sidebar.caption(f"🏢 Acente: {st.session_state.firma_adi}")
+
+if st.sidebar.button("🚪 Çıkış", use_container_width=True): 
+    try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Çıkış", "")
+    except: pass
+    st.session_state.giris_yapildi=False; st.rerun()
 
 if st.session_state.rol in ["Admin", "Satis"]:
+    # ... (Mevcut Günlük Aksiyon Kodların Aynı Kalacak) ...
+    with st.sidebar.expander("🔔 GÜNLÜK AKSİYON", expanded=True):
+        pass # İçeriği aynı bırak
+        
     st.sidebar.title("Modüller")
     menu_secenekleri = [
         "📋 Kayıt & Ayıklama", 
@@ -165,17 +206,30 @@ if st.session_state.rol in ["Admin", "Satis"]:
             "📊 Finansal & Coğrafi Dashboard",
             "🔐 Denetim İzi (Audit Log)",
             "🌐 Developer API & Entegrasyon",
-            "🌍 Grimset SaaS (Bayi Yönetimi)" # YENİ EKLENDİ
+            "🌍 Grimset SaaS (Bayi Yönetimi)"
         ])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
+
+# YENİ: BAYİ (ACENTE) ROLÜ İÇİN ÖZEL MENÜ (Admin modülleri gizlendi)
+elif st.session_state.rol == "Bayi":
+    st.sidebar.title(f"SaaS Modülleri")
+    menu_secenekleri = [
+        "📋 Kayıt & Ayıklama", 
+        "📝 Poliçe Atölyesi", 
+        "⏱️ Mikro Sigorta (On-Demand)",
+        "🏥 Sağlık (TSS/ÖSS)", 
+        "📌 Satış Hunisi (Kanban)", 
+        "🚗 Hasar Asistanı & Süreç Yönetimi", 
+        "🗄️ Dijital Evrak Kasası",
+        "🎫 Müşteri Destek Masası"
+    ]
+    sayfa = st.sidebar.radio("Menü:", menu_secenekleri)
+
 elif st.session_state.rol == "B2B_IK":
     sayfa = st.sidebar.radio("Menü:", ["🏢 Şirket Özeti & Talepler", "🧑‍🤝‍🧑 Personel Poliçeleri"])
 else:
-    st.sidebar.title("Müşteri Paneli")
-    menu_secenekleri = ["🏠 Poliçelerim", "⏱️ Mikro Sigorta Al", "🚗 Hasar Bildir & Takip Et", "🗄️ Evrak Kasam", "🎫 Destek Talebi (Ticket)"] # YENİ EKLENDİ
-    sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
+    sayfa = st.sidebar.radio("Menü:", ["🏠 Poliçelerim", "⏱️ Mikro Sigorta Al", "🚗 Hasar Bildir & Takip", "🗄️ Evrak Kasam", "🎫 Destek Talebi (Ticket)"])
 
-st.sidebar.markdown("---")
 st.sidebar.caption("Grimset Studio © 2026")
 
 # --- KURUMSAL B2B (İK) EKRANLARI ---
