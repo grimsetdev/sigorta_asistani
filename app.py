@@ -197,6 +197,7 @@ if st.session_state.rol in ["Admin", "Satis"]:
         "🎫 Müşteri Destek Masası",
         "📡 Telematik (Sürüş Analizi)",
         "⚡ Parametrik Sigorta (Smart Contract)"
+        "🛑 Konsorsiyum Kara Liste" # YENİ EKLENDİ
     ]
     if st.session_state.rol == "Admin":
         menu_secenekleri.extend([
@@ -223,6 +224,7 @@ elif st.session_state.rol == "Bayi":
         "🚗 Hasar Asistanı & Süreç Yönetimi", 
         "🗄️ Dijital Evrak Kasası",
         "🎫 Müşteri Destek Masası"
+        "🛑 Konsorsiyum Kara Liste" # BAYİLER DE GÖRMELİ
     ]
     sayfa = st.sidebar.radio("Menü:", menu_secenekleri)
 
@@ -494,17 +496,27 @@ Eğer segmenti tam bilemezsen marka ismine bakarak 'Ekonomi', 'Orta Sınıf', 'P
         with col_btn1:
             if st.button("💾 Google Sheets'e Kaydet", use_container_width=True):
                 if p_musteri and p_plaka and sh:
+                    # KONSORSİYUM KARA LİSTE SAVUNMA MEKANİZMASI
+                    bloke_edildi = False
                     try:
-                        zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi, net_komisyon_yazisi])
-                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Poliçe Kesildi (Voice-to-CRM Destekli)", f"Müşteri: {p_musteri}, Tutar: {prim_yazisi}")
-                        except: pass
-                        try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_plaka, "", "Poliçe Atölyesi (Sesli Müşteri)"])
-                        except: pass
-                        st.success("Poliçe kesildi!")
-                        # Kayıttan sonra AI hafızasını temizle
-                        st.session_state.update({"ai_isim": "", "ai_plaka": "", "ai_yil": 2020})
-                    except Exception as e: st.error(f"Hata: {e}")
+                        kara_liste = sh.worksheet("Kara_Liste").get_all_records()
+                        for k in kara_liste:
+                            if str(k.get("Plaka / TC", "")) == p_plaka.replace(" ", "").upper() and "Bloke Et" in str(k.get("Risk Seviyesi", "")):
+                                st.error(f"🚨 İŞLEM AĞ TARAFINDAN REDDEDİLDİ! Bu plaka Konsorsiyum Kara Listesinde bulunuyor. \n\n**Sebep:** {k.get('Sebep')} \n**Bildiren:** {k.get('Ekleyen Bayi/Personel')}")
+                                bloke_edildi = True; break
+                    except: pass
+                    
+                    if not bloke_edildi:
+                        try:
+                            zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            sh.worksheet("Üretilen Poliçeler").append_row([zaman, p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, st.session_state.kullanici_adi, net_komisyon_yazisi])
+                            try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Poliçe Kesildi", f"Müşteri: {p_musteri}")
+                            except: pass
+                            try: sh.worksheet("Müşteri Portföyü").append_row([zaman, p_musteri, p_tel, p_plaka, "", "Poliçe Atölyesi"])
+                            except: pass
+                            st.success("✅ Poliçe başarıyla kesildi ve sisteme işlendi!")
+                            st.session_state.update({"ai_isim": "", "ai_plaka": "", "ai_yil": 2020})
+                        except Exception as e: st.error(f"Kayıt Hatası: {e}")
         with col_btn2:
             if p_musteri and p_plaka:
                 st.download_button("📄 PDF İndir (" + secilen_dil + ")", data=pdf_olustur(p_musteri, p_plaka, p_tip, teminat_ozeti, prim_yazisi, piyasa_yazisi, avantaj_yazisi, musteri_ozel_ref_kodu, dil=secilen_dil), file_name=f"Grimset_{secilen_dil}_{p_plaka}.pdf", mime="application/pdf", use_container_width=True)
@@ -1764,3 +1776,42 @@ elif sayfa == "🏦 Reasürans (Risk Devri)" and st.session_state.rol == "Admin"
                                 
         except Exception as e:
             st.error(f"Veri çekilirken hata oluştu: {e}")
+
+            # YENİ MODÜL: 🛑 KONSORSİYUM KARA LİSTE (FRAUD KALKANI)
+elif sayfa == "🛑 Konsorsiyum Kara Liste" and st.session_state.rol in ["Admin", "Satis", "Bayi"]:
+    st.title("🛑 Konsorsiyum Kara Liste (Bilgi Asimetrisi Kalkanı)")
+    st.markdown("Ağdaki tüm bayilerin ve merkez ekibin ortak kullandığı suistimal (Fraud) veritabanı. Buraya eklenen riskli araçlar, tüm Grimset SaaS ekosisteminde **otomatik olarak engellenir.**")
+    st.markdown("---")
+    
+    if sh:
+        try: ws_karaliste = sh.worksheet("Kara_Liste")
+        except:
+            ws_karaliste = sh.add_worksheet(title="Kara_Liste", rows="100", cols="5")
+            ws_karaliste.append_row(["Tarih", "Plaka / TC", "Sebep", "Ekleyen Bayi/Personel", "Risk Seviyesi"])
+            
+        kl_c1, kl_c2 = st.columns([1, 1.5], gap="large")
+        with kl_c1:
+            st.subheader("🚨 Şüpheli Kayıt Ekle")
+            with st.form("karaliste_form"):
+                kl_plaka = st.text_input("Plaka veya TC Kimlik No", placeholder="Örn: 34ABC123").replace(" ", "").upper()
+                kl_sebep = st.text_area("Kara Listeye Alınma Sebebi", placeholder="Örn: Sahte kaza raporu düzenleme girişimi.")
+                kl_risk = st.selectbox("Risk Seviyesi", ["Yüksek Risk (Bloke Et)", "Orta Risk (Gözlemle)"])
+                
+                if st.form_submit_button("Ağa Bildir ve Kaydet", type="primary"):
+                    if kl_plaka and kl_sebep:
+                        ws_karaliste.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), kl_plaka, kl_sebep, st.session_state.firma_adi if st.session_state.rol == "Bayi" else st.session_state.kullanici_adi, kl_risk])
+                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Kara Liste Eklemesi", f"Plaka: {kl_plaka}")
+                        except: pass
+                        st.error(f"{kl_plaka} başarıyla konsorsiyum kara listesine eklendi! Artık ağdaki hiçbir acente bu araca işlem yapamayacak.")
+                        st.rerun()
+                    else: st.warning("Plaka/TC ve sebep zorunludur.")
+        
+        with kl_c2:
+            st.subheader("📋 Konsorsiyum Suistimal Listesi")
+            try:
+                liste_verisi = ws_karaliste.get_all_records()
+                if not liste_verisi: st.info("Sistem güvenli. Kara liste şu an temiz.")
+                else: 
+                    df_kl = pd.DataFrame(liste_verisi)
+                    st.dataframe(df_kl.iloc[::-1], use_container_width=True)
+            except Exception as e: st.warning("Okuma hatası.")
