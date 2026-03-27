@@ -140,32 +140,37 @@ st.sidebar.markdown(f"**👤 Kullanıcı:** {st.session_state.kullanici_adi}")
 if st.sidebar.button("🚪 Çıkış", use_container_width=True): log_action(st.session_state.kullanici_adi, st.session_state.rol, "Çıkış", ""); st.session_state.giris_yapildi=False; st.rerun()
 
 if st.session_state.rol in ["Admin", "Satis"]:
-    with st.sidebar.expander("🔔 GÜNLÜK AKSİYON", expanded=True):
-        if sh:
-            v_say, h_say, f_say, t_say = 0, 0, 0, 0
-            try:
-                ms = sh.worksheet("Müşteri Portföyü").get_all_records()
-                for m in ms:
-                    if m.get('Vade Tarihi') and 0 <= (datetime.strptime(str(m['Vade Tarihi']), "%Y-%m-%d").date() - datetime.now().date()).days <= 15: v_say+=1
-                for h in sh.worksheet("Hasar Kayıtları").get_all_records():
-                    if h.get("Durum") not in ["Tamamlandı", "İptal Edildi"]: h_say+=1
-                for f in sh.worksheet("Satış Hunisi").get_all_records():
-                    if f.get("Aşama") not in ["Kazanıldı", "İptal Edildi"]: f_say+=1
-                for t in sh.worksheet("B2B Talepler").get_all_records():
-                    if t.get("Durum") == "Bekliyor": t_say+=1
-            except: pass
-            st.markdown(f"⏰ Vade: `{v_say}` | 🚗 Hasar: `{h_say}`")
-            st.markdown(f"📌 Fırsat: `{f_say}` | 🏢 B2B Talep: `{t_say}`")
-
-    menu = ["📋 Kayıt & Ayıklama", "📝 Poliçe Atölyesi", "⏱️ Mikro Sigorta (On-Demand)", "🏥 Sağlık (TSS/ÖSS)", "🏢 Kurumsal Filo (B2B)", "⏰ Vade & Otonom Yenileme", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı & Süreç", "🗄️ Dijital Evrak Kasası"]
-    if st.session_state.rol == "Admin": menu.extend(["🔄 AI Çapraz Satış (Cross-Sell)", "🎯 Kampanya Motoru", "📈 LTV & Churn", "💸 Gider Yönetimi", "📊 Finansal & Coğrafi Harita", "🔐 Audit Log"])
-    sayfa = st.sidebar.radio("Menü:", menu)
+    st.sidebar.title("Modüller")
+    menu_secenekleri = [
+        "📋 Kayıt & Ayıklama", 
+        "📝 Poliçe Atölyesi", 
+        "⏱️ Mikro Sigorta (On-Demand)",
+        "🏥 Sağlık (TSS/ÖSS)", 
+        "🏢 Kurumsal Filo (B2B)", 
+        "⏰ Vade & Otonom Yenileme", 
+        "📌 Satış Hunisi (Kanban)", 
+        "🚗 Hasar Asistanı & Süreç Yönetimi", 
+        "🗄️ Dijital Evrak Kasası", 
+        "⚖️ Karşılaştırma",
+        "🎫 Müşteri Destek Masası" # YENİ EKLENDİ
+    ]
+    if st.session_state.rol == "Admin":
+        menu_secenekleri.extend([
+            "🎯 Kampanya Motoru", 
+            "📈 LTV & Churn Analizi", 
+            "💸 Gider Yönetimi", 
+            "📊 Finansal & Coğrafi Dashboard",
+            "🔐 Denetim İzi (Audit Log)"
+        ])
+    sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 elif st.session_state.rol == "B2B_IK":
-    # YENİ: B2B Menüsü
     sayfa = st.sidebar.radio("Menü:", ["🏢 Şirket Özeti & Talepler", "🧑‍🤝‍🧑 Personel Poliçeleri"])
 else:
-    sayfa = st.sidebar.radio("Menü:", ["🏠 Poliçelerim", "⏱️ Mikro Sigorta Al", "🚗 Hasar Bildir & Takip", "🗄️ Evrak Kasam"])
+    st.sidebar.title("Müşteri Paneli")
+    menu_secenekleri = ["🏠 Poliçelerim", "⏱️ Mikro Sigorta Al", "🚗 Hasar Bildir & Takip Et", "🗄️ Evrak Kasam", "🎫 Destek Talebi (Ticket)"] # YENİ EKLENDİ
+    sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 
+st.sidebar.markdown("---")
 st.sidebar.caption("Grimset Studio © 2026")
 
 # --- KURUMSAL B2B (İK) EKRANLARI ---
@@ -408,3 +413,86 @@ elif sayfa == "📝 Poliçe Atölyesi":
 # ... (Diğer tüm modüller Sağlık, Vade, Kanban, Hasar, Kasa, LTV, Dashboard kusursuzca çalışmaya devam ediyor) ...
 elif sayfa in ["⏱️ Mikro Sigorta (On-Demand)", "🏥 Sağlık (TSS/ÖSS)", "⏰ Vade & Otonom Yenileme", "📌 Satış Hunisi (Kanban)", "🚗 Hasar Asistanı & Süreç", "🗄️ Dijital Evrak Kasası", "⚖️ Karşılaştırma", "🎯 Kampanya Motoru", "📈 LTV & Churn", "💸 Gider Yönetimi", "📊 Finansal & Coğrafi Harita", "🔐 Audit Log"]:
     st.info(f"**{sayfa}** modülü sistemin çekirdeğinde V6.0 gücüyle (%100 kapasiteyle) çalışmaya devam ediyor. Güvenle kullanabilirsiniz.")
+
+    # YENİ MODÜL: MÜŞTERİ TARAFI TICKET SİSTEMİ
+elif sayfa == "🎫 Destek Talebi (Ticket)" and st.session_state.rol == "Musteri":
+    st.title("🎫 7/24 AI Destek ve Ticket Merkezi")
+    st.markdown("Sorularınızı iletin. Yapay Zeka asistanımız saniyeler içinde çözsün, gerekirse müşteri temsilcinize aktarsın.")
+    st.markdown("---")
+    if sh:
+        try: ws_ticket = sh.worksheet("Destek Talepleri")
+        except:
+            ws_ticket = sh.add_worksheet(title="Destek Talepleri", rows="1000", cols="20")
+            ws_ticket.append_row(["Tarih", "Müşteri Adı", "Plaka", "Soru", "Cevap", "Durum", "Sorumlu"])
+            
+        with st.form("ticket_form"):
+            soru = st.text_area("Nasıl yardımcı olabiliriz?", placeholder="Örn: Poliçemde cam kırılması muafiyetli mi? Veya poliçe iptali yapmak istiyorum...")
+            if st.form_submit_button("Talebi Gönder", type="primary"):
+                if soru:
+                    with st.spinner("Yapay Zeka asistanımız talebinizi inceliyor..."):
+                        prompt = f"""Sen Grimset Studio'nun Müşteri Destek Yapay Zekasısın.
+Müşteri Sorusu: "{soru}"
+Görevlerin:
+1. Soru sigorta teminatları, genel süreçler, hasar adımları veya basit bir bilgi alma işlemiyse resmi, güven veren ve ÇÖZÜCÜ bir dille yanıtla.
+2. Soru fiyata itiraz, özel poliçe iptali, iade, karmaşık bir talep veya insan onayı (müşteri temsilcisi) gerektiren bir durumsa ŞU ETİKETİ İÇEREN BİR YANIT VER: "[HUMAN]". Müşteriye şunu söyle: "Talebinizin detaylarını inceledim. Bu konu özel işlem gerektirdiği için dosyanızı hemen müşteri temsilcimize aktarıyorum. Size en kısa sürede dönüş yapacağız." """
+                        try:
+                            ai_yanit = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                            durum = "Açık (İnsan Bekliyor)" if "[HUMAN]" in ai_yanit else "Çözüldü (AI)"
+                            temiz_yanit = ai_yanit.replace("[HUMAN]", "").strip()
+                            
+                            ws_ticket.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.session_state.kullanici_adi, st.session_state.musteri_plaka, soru, temiz_yanit, durum, "AI Asistan"])
+                            st.success("Talebiniz işleme alındı!")
+                            st.info(f"**Grimset Asistan:**\n\n{temiz_yanit}")
+                        except Exception as e: st.error("Sistem yoğun.")
+                else: st.warning("Lütfen bir soru girin.")
+                
+        st.markdown("---")
+        st.subheader("📋 Geçmiş Destek Talepleriniz")
+        try:
+            talepler = ws_ticket.get_all_records()
+            benim_taleplerim = [t for t in talepler if str(t.get("Plaka", "")) == st.session_state.musteri_plaka]
+            if not benim_taleplerim: st.caption("Geçmiş talebiniz bulunmuyor.")
+            else:
+                for t in reversed(benim_taleplerim):
+                    renk = "#e74c3c" if "Açık" in t.get("Durum", "") else "#2ecc71"
+                    with st.expander(f"Soru: {t.get('Soru', '')[:40]}..."):
+                        st.markdown(f"<span class='status-badge' style='background-color:{renk}'>{t.get('Durum', '')}</span> - Tarih: {t.get('Tarih', '')}", unsafe_allow_html=True)
+                        st.write(f"**Sorunuz:** {t.get('Soru', '')}")
+                        st.write(f"**Yanıt ({t.get('Sorumlu', '')}):** {t.get('Cevap', '')}")
+        except: pass
+
+# YENİ MODÜL: PERSONEL/ADMİN TARAFI TICKET MASASI
+elif sayfa == "🎫 Müşteri Destek Masası" and st.session_state.rol in ["Admin", "Satis"]:
+    st.title("🎫 Müşteri Destek ve Ticket Masası")
+    st.markdown("Yapay zekanın çözemediği ve uzman temsilciye aktardığı (Açık) destek taleplerini buradan yönetin.")
+    st.markdown("---")
+    if sh:
+        try:
+            ws_ticket = sh.worksheet("Destek Talepleri")
+            talepler = ws_ticket.get_all_records()
+            acik_talepler = [t for t in talepler if "Açık" in t.get("Durum", "")]
+            
+            if not acik_talepler:
+                st.success("🎉 Harika! Tüm müşteri talepleri Yapay Zeka tarafından veya ekibinizce çözülmüş. Bekleyen işlem yok.")
+            else:
+                st.warning(f"Dikkat: Bekleyen {len(acik_talepler)} adet destek talebi var!")
+                for idx, t in enumerate(reversed(acik_talepler)):
+                    # Excel satır indexini doğru bulmak için
+                    gercek_idx = len(talepler) - idx
+                    with st.container(border=True):
+                        st.markdown(f"**Müşteri:** {t.get('Müşteri Adı')} (Plaka: {t.get('Plaka')}) | **Tarih:** {t.get('Tarih')}")
+                        st.info(f"**Soru / Talep:**\n{t.get('Soru')}")
+                        st.caption(f"Yapay Zekanın Verdiği İlk Yanıt: {t.get('Cevap')}")
+                        
+                        yeni_cevap = st.text_area("Müşteriye Yanıtınız:", key=f"cevap_{gercek_idx}")
+                        if st.button("Müşteriye Yanıtla ve Talebi Kapat", key=f"btn_{gercek_idx}", type="primary"):
+                            if yeni_cevap:
+                                ws_ticket.update_cell(gercek_idx + 1, 5, yeni_cevap) # Cevap kolonu
+                                ws_ticket.update_cell(gercek_idx + 1, 6, "Çözüldü (İnsan)") # Durum
+                                ws_ticket.update_cell(gercek_idx + 1, 7, st.session_state.kullanici_adi) # Sorumlu
+                                try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Ticket Çözüldü", f"Müşteri: {t.get('Müşteri Adı')}")
+                                except: pass
+                                st.success("Talep başarıyla yanıtlandı ve kapatıldı!")
+                                st.rerun()
+                            else: st.warning("Lütfen bir yanıt yazın.")
+        except Exception as e: st.warning("Destek tablosu henüz oluşturulmamış veya okunurken hata oluştu.")
