@@ -206,7 +206,8 @@ if st.session_state.rol in ["Admin", "Satis"]:
             "📊 Finansal & Coğrafi Dashboard",
             "🔐 Denetim İzi (Audit Log)",
             "🌐 Developer API & Entegrasyon",
-            "🌍 Grimset SaaS (Bayi Yönetimi)"
+            "🌍 Grimset SaaS (Bayi Yönetimi)",
+            "🏦 Reasürans (Risk Devri)" # YENİ EKLENDİ
         ])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 
@@ -1641,3 +1642,73 @@ elif sayfa == "🌍 Grimset SaaS (Bayi Yönetimi)" and st.session_state.rol == "
                     st.dataframe(aktif_bayiler[['Kayıt Tarihi', 'Acente (Bayi) Adı', 'Yetkili Kişi', 'Sistem Giriş Kodu', 'Aylık Kira (TL)']].iloc[::-1], use_container_width=True)
                     
             except Exception as e: st.warning(f"Tablo okunamadı: {e}")
+
+            # YENİ MODÜL: 🏦 GLOBAL REASÜRANS (RİSK DEVRİ) BORSASI
+elif sayfa == "🏦 Reasürans (Risk Devri)" and st.session_state.rol == "Admin":
+    st.title("🏦 Global Reasürans (Risk Devri) Borsası")
+    st.markdown("Şirketinizin üzerinde biriken toplam finansal riski analiz edin ve büyük hasar dalgalarına karşı kasanızı korumak için riskin bir kısmını global reasürörlere devredin.")
+    st.markdown("---")
+
+    if sh:
+        try:
+            # Tablo kontrolü/oluşturma
+            try: ws_reasurans = sh.worksheet("Reasurans")
+            except:
+                ws_reasurans = sh.add_worksheet(title="Reasurans", rows="100", cols="10")
+                ws_reasurans.append_row(["Tarih", "Reasürör", "Devredilen Risk Oranı", "Devredilen Prim (Maliyet)", "Durum", "İşlemi Yapan"])
+
+            policeler = sh.worksheet("Üretilen Poliçeler").get_all_records()
+            if not policeler:
+                st.warning("Sistemde henüz üretilmiş bir poliçe (risk) bulunmuyor. Önce satış yapmalısınız.")
+            else:
+                df_pol = pd.DataFrame(policeler)
+                df_pol['Saf Prim'] = df_pol['Toplam Prim'].astype(str).str.replace(' TL', '').str.replace(',', '').astype(float)
+                
+                # Sigortacılıkta toplam risk (Teminat) primin çok katıdır. Simülasyon için primin 50 katını "Toplam Risk Bedeli" varsayalım.
+                toplam_prim_havuzu = df_pol['Saf Prim'].sum()
+                toplam_risk_bedeli = toplam_prim_havuzu * 50 
+                
+                # Geçmiş devirleri hesapla
+                gecmis_devirler = ws_reasurans.get_all_records()
+                df_devir = pd.DataFrame(gecmis_devirler)
+                devredilen_toplam_prim = df_devir['Devredilen Prim (Maliyet)'].astype(str).str.replace(' TL', '').str.replace(',', '').astype(float).sum() if not df_devir.empty else 0
+                
+                kalan_prim_havuzu = toplam_prim_havuzu - devredilen_toplam_prim
+                kalan_risk_bedeli = kalan_prim_havuzu * 50
+
+                r_col1, r_col2 = st.columns([1, 1.2], gap="large")
+                
+                with r_col1:
+                    st.markdown("### 📊 Şirket Risk Profili")
+                    st.metric("Toplam Toplanan Prim Havuzu", f"{int(toplam_prim_havuzu):,} TL")
+                    st.metric("Grimset Kasasındaki Aktif Risk", f"{int(kalan_risk_bedeli):,} TL", delta=f"Öz Sermaye Tehdidi", delta_color="inverse")
+                    
+                    risk_seviyesi = (kalan_prim_havuzu / toplam_prim_havuzu) * 100 if toplam_prim_havuzu > 0 else 0
+                    st.progress(int(risk_seviyesi) if risk_seviyesi <= 100 else 100)
+                    
+                    if risk_seviyesi > 70:
+                        st.error("🚨 KRİTİK UYARI: Öz sermaye üzerindeki risk yükünüz çok yüksek! Olası bir doğal afette şirket kasası zorlanabilir. Acilen risk devri yapmalısınız.")
+                    else:
+                        st.success("✅ Risk dengesi sağlıklı. Güvenli bölgedesiniz.")
+
+                with r_col2:
+                    st.markdown("### 🤝 Reasürans Anlaşması Yap")
+                    with st.form("reasurans_form"):
+                        reasuror = st.selectbox("Hedef Reasürans Şirketi", ["Swiss Re (İsviçre)", "Munich Re (Almanya)", "Hannover Re (Almanya)", "Scor (Fransa)", "Lloyd's (İngiltere)"])
+                        devir_orani = st.slider("Devredilecek Risk Oranı (%)", min_value=10, max_value=80, value=40, step=5)
+                        
+                        devir_maliyeti = int(kalan_prim_havuzu * (devir_orani / 100))
+                        st.info(f"💡 **İşlem Özeti:** Grimset kasasındaki riskin %{devir_orani}'sini {reasuror} şirketine devrediyorsunuz. Bunun karşılığında toplanan prim havuzundan **{devir_maliyeti:,} TL** bu şirkete transfer edilecek.")
+                        
+                        if st.form_submit_button("Sözleşmeyi İmzala ve Riski Devret", type="primary"):
+                            if kalan_prim_havuzu <= 0:
+                                st.warning("Devredilecek aktif bir risk havuzu bulunmuyor.")
+                            else:
+                                ws_reasurans.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), reasuror, f"%{devir_orani}", f"{devir_maliyeti} TL", "Aktif Sözleşme", st.session_state.kullanici_adi])
+                                try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Reasürans Anlaşması", f"Şirket: {reasuror}, Oran: %{devir_orani}, Maliyet: {devir_maliyeti} TL")
+                                except: pass
+                                st.success(f"Sözleşme başarıyla imzalandı! Risk yükünüz {reasuror} güvencesine alındı.")
+                                st.rerun()
+                                
+        except Exception as e:
+            st.error(f"Veri çekilirken hata oluştu: {e}")
