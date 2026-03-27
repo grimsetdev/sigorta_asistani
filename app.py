@@ -1140,10 +1140,10 @@ Görevlerin:
                         st.write(f"**Yanıt ({t.get('Sorumlu', '')}):** {t.get('Cevap', '')}")
         except: pass
 
-# YENİ MODÜL: PERSONEL/ADMİN TARAFI TICKET MASASI
+# GÜNCEL MODÜL: 🎫 PERSONEL TARAFI TICKET MASASI & AI DUYGU ANALİZİ
 elif sayfa == "🎫 Müşteri Destek Masası" and st.session_state.rol in ["Admin", "Satis"]:
-    st.title("🎫 Müşteri Destek ve Ticket Masası")
-    st.markdown("Yapay zekanın çözemediği ve uzman temsilciye aktardığı (Açık) destek taleplerini buradan yönetin.")
+    st.title("🎫 Müşteri Destek Masası & AI Duygu Radarı")
+    st.markdown("Yapay zekanın çözemediği talepleri yönetin. **Müşteriye cevap vermeden önce AI Duygu Analizi (Sentiment) ile psikolojisini ölçün ve krizleri fırsata çevirin.**")
     st.markdown("---")
     if sh:
         try:
@@ -1155,20 +1155,39 @@ elif sayfa == "🎫 Müşteri Destek Masası" and st.session_state.rol in ["Admi
                 st.success("🎉 Harika! Tüm müşteri talepleri Yapay Zeka tarafından veya ekibinizce çözülmüş. Bekleyen işlem yok.")
             else:
                 st.warning(f"Dikkat: Bekleyen {len(acik_talepler)} adet destek talebi var!")
-                for idx, t in enumerate(reversed(acik_talepler)):
-                    # Excel satır indexini doğru bulmak için
-                    gercek_idx = len(talepler) - idx
+                # En yeni talep en üstte görünsün diye ters çeviriyoruz
+                for t in reversed(acik_talepler):
+                    # Orijinal listedeki indexi bul (Başlık satırı için +2 ekliyoruz)
+                    gercek_idx = talepler.index(t) + 2
+                    
                     with st.container(border=True):
-                        st.markdown(f"**Müşteri:** {t.get('Müşteri Adı')} (Plaka: {t.get('Plaka')}) | **Tarih:** {t.get('Tarih')}")
-                        st.info(f"**Soru / Talep:**\n{t.get('Soru')}")
-                        st.caption(f"Yapay Zekanın Verdiği İlk Yanıt: {t.get('Cevap')}")
+                        st.markdown(f"**👤 Müşteri:** {t.get('Müşteri Adı')} (Plaka: {t.get('Plaka')}) | **Tarih:** {t.get('Tarih')}")
+                        st.info(f"**💬 Soru / Şikayet Metni:**\n{t.get('Soru')}")
                         
-                        yeni_cevap = st.text_area("Müşteriye Yanıtınız:", key=f"cevap_{gercek_idx}")
+                        # YENİ: AI MÜŞTERİ DUYGU (SENTIMENT) ANALİZİ BUTONU
+                        if st.button("🧠 Müşteri Psikolojisini Analiz Et", key=f"duygu_{gercek_idx}", use_container_width=True):
+                            with st.spinner("Gemini müşterinin psikolojik durumunu ve öfke seviyesini analiz ediyor..."):
+                                prompt = f"""Sen uzman bir müşteri kriz yönetimi ve psikoloji analistisin. Müşterinin sigorta şirketimize yazdığı şu mesajı analiz et: "{t.get('Soru')}"
+Lütfen şu iki maddeyi bana acımasızca ve çok kısa (nokta atışı) şekilde ver:
+1. DUYGU DURUMU: Bu müşteri [🔴 ÖFKELİ / İPTAL RİSKİ YÜKSEK], [🟡 NÖTR / BİLGİ İSTİYOR] veya [🟢 MEMNUN] durumlarından hangisinde?
+2. TEMSİLCİYE TAKTİK: Bu müşteriyi sakinleştirmek, elde tutmak veya ona yeni bir şey satmak için yanıtımızda nasıl bir ton/kelime seçimi kullanmalıyız? (1-2 cümlelik net taktik)."""
+                                try:
+                                    analiz_sonucu = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                                    st.markdown(f"""
+                                    <div style="background-color: #2c3e50; padding: 15px; border-radius: 8px; border-left: 5px solid #9b59b6; margin-bottom: 15px;">
+                                        <h4 style="margin-top:0; color:#ecf0f1;">🤖 AI Sentiment (Duygu) Analizi</h4>
+                                        <p style="margin-bottom:0; color:#bdc3c7;">{analiz_sonucu}</p>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                except Exception as e:
+                                    st.error("Duygu analizi şu an yapılamıyor.")
+                        
+                        yeni_cevap = st.text_area("Taktiklere Göre Müşteriye Yanıtınız:", key=f"cevap_{gercek_idx}")
                         if st.button("Müşteriye Yanıtla ve Talebi Kapat", key=f"btn_{gercek_idx}", type="primary"):
                             if yeni_cevap:
-                                ws_ticket.update_cell(gercek_idx + 1, 5, yeni_cevap) # Cevap kolonu
-                                ws_ticket.update_cell(gercek_idx + 1, 6, "Çözüldü (İnsan)") # Durum
-                                ws_ticket.update_cell(gercek_idx + 1, 7, st.session_state.kullanici_adi) # Sorumlu
+                                ws_ticket.update_cell(gercek_idx, 5, yeni_cevap) # Cevap kolonu
+                                ws_ticket.update_cell(gercek_idx, 6, "Çözüldü (İnsan)") # Durum
+                                ws_ticket.update_cell(gercek_idx, 7, st.session_state.kullanici_adi) # Sorumlu
                                 try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Ticket Çözüldü", f"Müşteri: {t.get('Müşteri Adı')}")
                                 except: pass
                                 st.success("Talep başarıyla yanıtlandı ve kapatıldı!")
