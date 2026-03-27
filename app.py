@@ -250,7 +250,8 @@ if st.session_state.rol in ["Admin", "Satis"]:
             "🌐 Developer API & Entegrasyon",
             "🌍 Grimset SaaS (Bayi Yönetimi)",
             "🏦 Reasürans (Risk Devri)",
-            "⚙️ Operasyonel Komuta Merkezi" # YENİ EKLENDİ
+            "⚙️ Operasyonel Komuta Merkezi",
+            "🏦 B2B Açık Hesap & Tahsilat" # YENİ EKLENDİ (Virgüle dikkat!)
         ])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 
@@ -2077,3 +2078,112 @@ elif sayfa == "⚙️ Operasyonel Komuta Merkezi" and st.session_state.rol in ["
                         st.markdown("<br>", unsafe_allow_html=True)
             except Exception as e: 
                 st.warning(f"Görevler okunurken hata: {e}")
+
+                # YENİ MODÜL: 🏦 B2B AÇIK HESAP (VADELİ TAHSİLAT) YÖNETİCİSİ
+elif sayfa == "🏦 B2B Açık Hesap & Tahsilat" and st.session_state.rol in ["Admin", "Satis"]:
+    st.title("🏦 B2B Açık Hesap ve Vadeli Tahsilat Yöneticisi")
+    st.markdown("Kurumsal müşterilerinize kestiğiniz vadeli poliçelerin ödeme günlerini takip edin, geciken alacaklar için AI destekli hatırlatmalar gönderin.")
+    st.markdown("---")
+
+    if sh:
+        try: ws_tahsilat = sh.worksheet("B2B_Tahsilat")
+        except:
+            ws_tahsilat = sh.add_worksheet(title="B2B_Tahsilat", rows="100", cols="8")
+            ws_tahsilat.append_row(["Kayıt Tarihi", "Firma Adı", "İlgili Poliçe/İşlem", "Toplam Borç (TL)", "Vade Tarihi", "Kalan Bakiye (TL)", "Durum", "Ekleyen"])
+
+        c_tah1, c_tah2 = st.columns([1, 1.5], gap="large")
+
+        with c_tah1:
+            st.subheader("➕ Yeni Vadeli Alacak Ekle")
+            with st.form("tahsilat_form"):
+                t_firma = st.text_input("Kurumsal Firma Adı", placeholder="Örn: Tech A.Ş.")
+                t_islem = st.text_input("İlgili İşlem / Poliçe", placeholder="Örn: 50 Araçlık Filo Kasko")
+                t_tutar = st.number_input("Toplam Borç Tutarı (TL)", min_value=0, step=1000)
+                t_vade = st.date_input("Son Ödeme (Vade) Tarihi")
+                
+                if st.form_submit_button("Açık Hesabı Sisteme İşle", type="primary"):
+                    if t_firma and t_islem and t_tutar > 0:
+                        ws_tahsilat.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), t_firma, t_islem, t_tutar, str(t_vade), t_tutar, "Ödeme Bekliyor", st.session_state.kullanici_adi])
+                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Açık Hesap Eklendi", f"Firma: {t_firma}, Tutar: {t_tutar} TL")
+                        except: pass
+                        st.success(f"{t_firma} firmasının {t_tutar} TL'lik borcu vade takibine alındı!")
+                        st.rerun()
+                    else: st.warning("Lütfen Firma, İşlem ve Tutar bilgilerini eksiksiz girin.")
+
+        with c_tah2:
+            st.subheader("📊 Tahsilat Radarı & Geciken Alacaklar")
+            try:
+                tahsilatlar = ws_tahsilat.get_all_records()
+                bekleyen_tahsilatlar = [t for t in tahsilatlar if "Ödendi" not in str(t.get("Durum", ""))]
+                
+                if not bekleyen_tahsilatlar:
+                    st.success("🎉 Harika! Piyasadan bekleyen hiçbir alacağınız yok. Kasa güvende.")
+                else:
+                    bugun = datetime.now().date()
+                    
+                    for idx, t in enumerate(bekleyen_tahsilatlar):
+                        gercek_idx = tahsilatlar.index(t) + 2
+                        
+                        vade_str = str(t.get("Vade Tarihi", ""))
+                        try: vade_tarihi = datetime.strptime(vade_str, "%Y-%m-%d").date()
+                        except: vade_tarihi = bugun # Hata varsa bugun say
+                        
+                        kalan_gun = (vade_tarihi - bugun).days
+                        bakiye = t.get("Kalan Bakiye (TL)", 0)
+                        firma = t.get("Firma Adı", "Firma")
+                        
+                        # Durum Renklendirme ve Kalkan
+                        if kalan_gun < 0:
+                            renk = "#e74c3c" # Kırmızı (Gecikti)
+                            durum_metni = f"🚨 GECİKTİ ({abs(kalan_gun)} Gün)"
+                        elif kalan_gun <= 3:
+                            renk = "#f39c12" # Turuncu (Kritik)
+                            durum_metni = f"⚠️ VADE YAKLAŞTI ({kalan_gun} Gün Kaldı)"
+                        else:
+                            renk = "#3498db" # Mavi (Normal)
+                            durum_metni = f"⏳ Bekliyor ({kalan_gun} Gün Kaldı)"
+                            
+                        with st.container(border=True):
+                            st.markdown(f"""
+                            <div style="border-left: 5px solid {renk}; padding-left: 10px;">
+                                <b>🏢 {firma}</b> | <span>{t.get("İlgili Poliçe/İşlem")}</span><br>
+                                <span style="color: {renk}; font-weight: bold;">{durum_metni}</span><br>
+                                <b style="font-size: 1.2rem;">Kalan Bakiye: {bakiye:,} TL</b>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            c_btn1, c_btn2 = st.columns(2)
+                            
+                            # Kısmi veya Tam Tahsilat İşlemi
+                            with c_btn1:
+                                odenen_tutar = st.number_input(f"Tahsil Edilen Tutar", min_value=0, max_value=int(bakiye), key=f"ode_{gercek_idx}", label_visibility="collapsed")
+                                if st.button("💳 Tahsilatı İşle", key=f"tahsil_{gercek_idx}", use_container_width=True):
+                                    if odenen_tutar > 0:
+                                        yeni_bakiye = int(bakiye) - odenen_tutar
+                                        yeni_durum = "Tamamen Ödendi" if yeni_bakiye <= 0 else "Kısmi Ödeme Yapıldı"
+                                        
+                                        ws_tahsilat.update_cell(gercek_idx, 6, yeni_bakiye)
+                                        ws_tahsilat.update_cell(gercek_idx, 7, yeni_durum)
+                                        
+                                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Tahsilat Alındı", f"Firma: {firma}, Tutar: {odenen_tutar} TL")
+                                        except: pass
+                                        st.success(f"{odenen_tutar} TL tahsilat başarıyla kasaya işlendi!")
+                                        st.rerun()
+                            
+                            # Gecikenler İçin AI Hatırlatma
+                            with c_btn2:
+                                if st.button("🤖 AI Tahsilat Mesajı Üret", key=f"hatirlat_{gercek_idx}", use_container_width=True):
+                                    with st.spinner("Gemini tahsilat uzmanı metni hazırlıyor..."):
+                                        prompt = f"""Sen Grimset Studio'nun kurumsal tahsilat ve finans müdürüsün. 
+Müşterimiz '{firma}' şirketinin '{t.get("İlgili Poliçe/İşlem")}' işlemi için bize tam '{bakiye} TL' vadesi gelmiş/gecikmiş borcu bulunuyor. 
+Şu an vade durumu: {durum_metni}.
+Bu şirketin muhasebe departmanına atılacak; kurumsal, kibar ama paranın ödenmesi konusunda kesin ve hukuki ağırlığı hissettiren 3-4 cümlelik bir tahsilat hatırlatma mesajı (WhatsApp/Mail formatında) yaz."""
+                                        try:
+                                            ai_tahsilat_mesaji = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                                            st.info(ai_tahsilat_mesaji)
+                                            
+                                            wa_link = f"https://wa.me/?text={urllib.parse.quote(ai_tahsilat_mesaji)}"
+                                            st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 5px; border-radius: 5px; font-weight: bold;">💬 Mesajı WhatsApp\'tan Gönder</div></a>', unsafe_allow_html=True)
+                                        except Exception as e: st.error("AI bağlantı hatası.")
+                            st.markdown("<br>", unsafe_allow_html=True)
+            except Exception as e: st.warning(f"Bağlantı hatası: {e}")
