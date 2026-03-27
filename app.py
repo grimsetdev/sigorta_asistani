@@ -149,6 +149,7 @@ if st.session_state.rol in ["Admin", "Satis"]:
         "🏢 Kurumsal Filo (B2B)", 
         "⏰ Vade & Otonom Yenileme", 
         "📌 Satış Hunisi (Kanban)", 
+        "📅 Ajanda & Randevu", # YENİ EKLENDİ
         "🚗 Hasar Asistanı & Süreç Yönetimi", 
         "🗄️ Dijital Evrak Kasası", 
         "⚖️ Karşılaştırma",
@@ -161,7 +162,7 @@ if st.session_state.rol in ["Admin", "Satis"]:
             "💸 Gider Yönetimi", 
             "📊 Finansal & Coğrafi Dashboard",
             "🔐 Denetim İzi (Audit Log)",
-            "🌐 Developer API & Entegrasyon" # YENİ EKLENDİ
+            "🌐 Developer API & Entegrasyon"
         ])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 elif st.session_state.rol == "B2B_IK":
@@ -564,3 +565,76 @@ response = requests.post(url, json=payload, headers=headers)
 if response.status_code == 201:
     print("Müşteri başarıyla Grimset Satış Hunisine (Kanban) eklendi!")
         """, language="python")
+
+        # YENİ MODÜL: 📅 AI DESTEKLİ AJANDA VE RANDEVU SİSTEMİ
+elif sayfa == "📅 Ajanda & Randevu" and st.session_state.rol in ["Admin", "Satis"]:
+    st.title("📅 AI Destekli Ajanda ve Toplantı Merkezi")
+    st.markdown("Kurumsal (B2B) veya VIP müşterilerle yapacağınız toplantıları planlayın, Yapay Zeka sizin için 'Kapanış (Closing)' taktikleri hazırlasın.")
+    st.markdown("---")
+    
+    if sh:
+        # Sheet kontrolü/oluşturma
+        try: ws_randevu = sh.worksheet("Randevular")
+        except:
+            ws_randevu = sh.add_worksheet(title="Randevular", rows="100", cols="10")
+            ws_randevu.append_row(["Tarih", "Saat", "Müşteri Adı", "Konu", "Durum", "Sorumlu"])
+            
+        c_aj1, c_aj2 = st.columns([1, 1.5], gap="large")
+        
+        with c_aj1:
+            st.subheader("➕ Yeni Toplantı Ayarla")
+            with st.form("randevu_form"):
+                r_musteri = st.text_input("Müşteri / Firma Adı")
+                r_konu = st.text_input("Toplantı Konusu", placeholder="Örn: 50 Araçlık Filo Kasko Görüşmesi")
+                
+                c_dt1, c_dt2 = st.columns(2)
+                r_tarih = c_dt1.date_input("Toplantı Tarihi")
+                r_saat = c_dt2.time_input("Toplantı Saati")
+                
+                if st.form_submit_button("Randevuyu Takvime İşle", type="primary"):
+                    if r_musteri and r_konu:
+                        ws_randevu.append_row([str(r_tarih), str(r_saat), r_musteri, r_konu, "Bekliyor", st.session_state.kullanici_adi])
+                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Yeni Randevu", f"{r_musteri} - {r_tarih} {r_saat}")
+                        except: pass
+                        st.success("Randevu başarıyla takvime işlendi!")
+                        st.rerun()
+                    else: st.warning("Lütfen müşteri adı ve konuyu giriniz.")
+                    
+        with c_aj2:
+            st.subheader("🗓️ Yaklaşan Toplantılar")
+            try:
+                randevular = ws_randevu.get_all_records()
+                aktif_randevular = [r for r in randevular if str(r.get("Durum", "")) == "Bekliyor"]
+                
+                if not aktif_randevular:
+                    st.info("Yaklaşan bir toplantınız bulunmuyor. Sahaya inme vakti!")
+                else:
+                    # Tarihe göre sırala (En yakın tarih en üstte)
+                    aktif_randevular.sort(key=lambda x: str(x.get('Tarih', '9999-12-31')))
+                    
+                    for idx, r in enumerate(aktif_randevular):
+                        gercek_idx = randevular.index(r) + 2 # Excel satır numarası (1 başlık, 0 tabanlı index)
+                        
+                        with st.container(border=True):
+                            c_r1, c_r2 = st.columns([2, 1])
+                            with c_r1:
+                                st.markdown(f"**🤝 Müşteri/Firma:** {r.get('Müşteri Adı')}")
+                                st.caption(f"🗓️ **{r.get('Tarih')}** | ⏰ **{r.get('Saat')}**")
+                                st.write(f"🎯 **Gündem:** {r.get('Konu')}")
+                            with c_r2:
+                                if st.button("🤖 AI Hazırlığı", key=f"ai_prep_{gercek_idx}", use_container_width=True):
+                                    with st.spinner("Gemini strateji üretiyor..."):
+                                        prompt = f"""Sen elit bir sigorta ve satış koçusun. Birazdan '{r.get('Müşteri Adı')}' adlı müşteriyle '{r.get('Konu')}' konusunda bir toplantım var. 
+Lütfen bu satışı kapatmak, müşterinin olası fiyat itirazlarını önceden savuşturmak ve masadan zaferle ayrılmamı sağlamak için bana 3 maddelik çok sert, vurucu ve net bir taktik ver. Satıcı motivasyonuyla konuş."""
+                                        try:
+                                            ai_taktik = client.models.generate_content(model=TEXT_MODEL, contents=prompt).text
+                                            st.info(ai_taktik)
+                                        except Exception as e: st.error("AI bağlantı hatası.")
+                                        
+                                if st.button("✅ Yapıldı İşaretle", key=f"tamamla_{gercek_idx}", use_container_width=True):
+                                    ws_randevu.update_cell(gercek_idx, 5, "Tamamlandı")
+                                    try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Toplantı Tamamlandı", f"{r.get('Müşteri Adı')}")
+                                    except: pass
+                                    st.success("Toplantı tamamlandı olarak işaretlendi!")
+                                    st.rerun()
+            except Exception as e: st.warning(f"Randevular okunamadı: {e}")
