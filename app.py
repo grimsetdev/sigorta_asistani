@@ -155,7 +155,7 @@ if st.session_state.rol in ["Admin", "Satis"]:
         "⚖️ Karşılaştırma",
         "🎫 Müşteri Destek Masası",
         "📡 Telematik (Sürüş Analizi)",
-        "⚡ Parametrik Sigorta (Smart Contract)" # YENİ EKLENDİ
+        "⚡ Parametrik Sigorta (Smart Contract)"
     ]
     if st.session_state.rol == "Admin":
         menu_secenekleri.extend([
@@ -164,7 +164,8 @@ if st.session_state.rol in ["Admin", "Satis"]:
             "💸 Gider Yönetimi", 
             "📊 Finansal & Coğrafi Dashboard",
             "🔐 Denetim İzi (Audit Log)",
-            "🌐 Developer API & Entegrasyon"
+            "🌐 Developer API & Entegrasyon",
+            "🌍 Grimset SaaS (Bayi Yönetimi)" # YENİ EKLENDİ
         ])
     sayfa = st.sidebar.radio("İşlem Seçin:", menu_secenekleri)
 elif st.session_state.rol == "B2B_IK":
@@ -1502,3 +1503,68 @@ Ona, "{s.get('Otomatik Tazminat')} tutarındaki tazminatınızın hiçbir belge 
                                         st.markdown(f'<a href="{wa_link}" target="_blank" style="text-decoration: none;"><div style="background-color: #25D366; color: white; text-align: center; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 10px;">💬 Otonom Mesajı WhatsApp\'tan Fırlat</div></a>', unsafe_allow_html=True)
                                     except: st.error("AI mesajı oluşturulamadı.")
             except Exception as e: st.warning(f"Sözleşme tablosu okunurken hata: {e}")
+
+            # YENİ MODÜL: 🌍 GRIMSET SAAS (MULTI-TENANT BAYİLİK YÖNETİMİ)
+elif sayfa == "🌍 Grimset SaaS (Bayi Yönetimi)" and st.session_state.rol == "Admin":
+    st.title("🌍 Grimset SaaS Super Admin Paneli")
+    st.markdown("Grimset Studio altyapısını diğer sigorta acentelerine kiralayın, bayilik ağınızı yönetin ve **Düzenli Yazılım Gelirinizi (MRR)** takip edin.")
+    st.markdown("---")
+
+    if sh:
+        # Bayiler Tablosu Kontrolü/Oluşturma
+        try: ws_bayi = sh.worksheet("Bayiler")
+        except:
+            ws_bayi = sh.add_worksheet(title="Bayiler", rows="100", cols="10")
+            ws_bayi.append_row(["Kayıt Tarihi", "Acente (Bayi) Adı", "Yetkili Kişi", "Sistem Giriş Kodu", "Aylık Kira (TL)", "Durum"])
+            
+        b_col1, b_col2 = st.columns([1, 1.5], gap="large")
+        
+        with b_col1:
+            st.subheader("🏢 Yeni Acente (Tenant) Ekle")
+            with st.form("bayi_form"):
+                b_acente = st.text_input("Acente / Bayi Adı", placeholder="Örn: Güven Sigorta Aracılık")
+                b_yetkili = st.text_input("Yetkili Adı Soyadı")
+                
+                # Rastgele ve güvenli bir Acente Kodu üretimi
+                import random, string
+                oto_kod = "GRM-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+                
+                b_kod = st.text_input("Sisteme Giriş Kodu (Acente ID)", value=oto_kod)
+                b_kira = st.number_input("Aylık Yazılım Kullanım Bedeli (TL)", min_value=0, value=5000, step=500)
+                
+                if st.form_submit_button("Bayiyi Ağa Dahil Et", type="primary"):
+                    if b_acente and b_yetkili:
+                        ws_bayi.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), b_acente, b_yetkili, b_kod, b_kira, "Aktif"])
+                        try: log_action(st.session_state.kullanici_adi, st.session_state.rol, "Yeni Bayi Eklendi", f"Acente: {b_acente}, Kira: {b_kira} TL")
+                        except: pass
+                        st.success(f"Tebrikler! {b_acente} başarıyla Grimset SaaS ağına katıldı.")
+                        st.rerun()
+                    else: st.warning("Acente ve Yetkili adını girmelisiniz.")
+
+        with b_col2:
+            st.subheader("📈 SaaS Finansal Metrikleri")
+            try:
+                bayiler = ws_bayi.get_all_records()
+                if not bayiler:
+                    st.info("Sistemde henüz kayıtlı bir bayi bulunmuyor. İlk satışınızı yapın!")
+                else:
+                    df_bayi = pd.DataFrame(bayiler)
+                    aktif_bayiler = df_bayi[df_bayi['Durum'] == 'Aktif']
+                    
+                    # MRR (Aylık Düzenli Gelir) Hesaplama
+                    toplam_mrr = aktif_bayiler['Aylık Kira (TL)'].sum()
+                    yillik_arr = toplam_mrr * 12
+                    
+                    # Şirket Değerlemesi (Yazılım dünyasında genelde ARR x 5 veya 10 alınır)
+                    sirket_degerlemesi = yillik_arr * 10 
+                    
+                    m_c1, m_c2, m_c3 = st.columns(3)
+                    m_c1.metric("Aktif Bayi Sayısı", f"{len(aktif_bayiler)} Adet")
+                    m_c2.metric("Aylık Düzenli Gelir (MRR)", f"{int(toplam_mrr):,} TL")
+                    m_c3.metric("Tahmini Şirket Değeri", f"{int(sirket_degerlemesi):,} TL", delta="10x Çarpan", delta_color="normal")
+                    
+                    st.markdown("---")
+                    st.markdown("### 📋 Bayi Ağı (Tenant Listesi)")
+                    st.dataframe(aktif_bayiler[['Kayıt Tarihi', 'Acente (Bayi) Adı', 'Yetkili Kişi', 'Sistem Giriş Kodu', 'Aylık Kira (TL)']].iloc[::-1], use_container_width=True)
+                    
+            except Exception as e: st.warning(f"Tablo okunamadı: {e}")
